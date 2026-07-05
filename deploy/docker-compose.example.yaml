@@ -1,0 +1,41 @@
+services:
+  journarr:
+    image: ghcr.io/pburkhalter/journarr:latest
+    restart: unless-stopped
+    user: "568:568" # TrueNAS apps user
+    ports: ["8484:8484"]
+    environment:
+      DB_PATH: /data/journarr.db
+      LOG_LEVEL: info
+
+      # Webhook ingestion (milestone 1+): shared token for /webhook/{source}
+      JOURNARR_WEBHOOK_TOKEN: ${JOURNARR_WEBHOOK_TOKEN}
+
+      # SSO via OIDC (Pocket ID etc.) — remove this block for open LAN mode.
+      # In Pocket ID: create an OIDC client with callback URL
+      #   ${JOURNARR_PUBLIC_URL}/auth/callback
+      JOURNARR_PUBLIC_URL: http://192.168.0.203:8484
+      OIDC_ISSUER_URL: https://sso.pburkhalter.ch
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET} # >= 16 chars, e.g. `openssl rand -hex 32`
+      # OIDC_ALLOWED_GROUPS: journarr-users   # optional, comma-separated
+      # OIDC_SCOPES: openid,profile,email     # if your IdP rejects the groups scope
+
+      # Services — leave a URL empty to skip monitoring that service.
+      SEERR_URL: http://192.168.0.203:5055
+      SEERR_API_KEY: ${SEERR_API_KEY}
+      SONARR_URL: http://192.168.0.203:8989
+      SONARR_API_KEY: ${SONARR_API_KEY}
+      RADARR_URL: http://192.168.0.203:7878
+      RADARR_API_KEY: ${RADARR_API_KEY}
+      PROWLARR_URL: http://192.168.0.203:9696
+      PROWLARR_API_KEY: ${PROWLARR_API_KEY}
+      ARRARR_URL: http://192.168.0.203:8285
+      ARRARR_API_KEY: ${ARRARR_API_KEY}
+      JELLYFIN_URL: http://192.168.0.203:8096
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY}
+      WAHA_URL: http://192.168.0.203:3088
+      WAHA_API_KEY: ${WAHA_API_KEY}
+    volumes:
+      - /mnt/Fast/apps/journarr:/data

@@ -30,3 +30,14 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
+# Local dev artifacts
+*.db
+*.db-shm
+*.db-wal
+/bin/
