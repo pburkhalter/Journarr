@@ -1,47 +1,95 @@
 <script lang="ts">
-	import { getStats } from '$lib/api';
-	import type { Stats } from '$lib/types';
-	import { onMount } from 'svelte';
+	import { getRequests } from '$lib/api';
+	import PipelineCard from '$lib/components/PipelineCard.svelte';
+	import { live } from '$lib/live.svelte';
+	import type { RequestRollup } from '$lib/types';
+	import { cn } from '$lib/utils';
 
-	let stats = $state<Stats | null>(null);
+	let requests = $state<RequestRollup[]>([]);
+	let filter = $state<'active' | 'done' | 'all'>('active');
+	let query = $state('');
+	let loaded = $state(false);
 
-	onMount(async () => {
+	// Sequence guard: a slow older response must never overwrite a newer one.
+	let seq = 0;
+
+	async function load(f: string, q: string) {
+		const mySeq = ++seq;
 		try {
-			stats = await getStats();
+			const result = await getRequests(f, q.trim());
+			if (mySeq === seq) {
+				requests = result;
+				loaded = true;
+			}
 		} catch {
-			// backend down — sidebar indicator already shows it
+			// backend unreachable — sidebar shows it
 		}
+	}
+
+	// initial + live refresh (debounced tick from SSE) + filter changes.
+	// `query` is intentionally NOT read here — the search box has its own
+	// debounce; reading it in the effect would refire on every keystroke.
+	$effect(() => {
+		void live.pipelineTick;
+		const f = filter;
+		void load(f, query);
 	});
 
-	const active = $derived(stats?.requests['active'] ?? 0);
-	const completed = $derived(stats?.requests['completed'] ?? 0);
-	const failed = $derived(stats?.requests['failed'] ?? 0);
+	let searchTimer: ReturnType<typeof setTimeout>;
+	function onSearch() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => void load(filter, query), 300);
+	}
+
+	const filters = [
+		{ key: 'active', label: 'Active' },
+		{ key: 'done', label: 'Done' },
+		{ key: 'all', label: 'All' }
+	] as const;
 </script>
 
-<div class="mb-6">
-	<h1 class="text-xl font-semibold tracking-tight">Flow</h1>
-	<p class="text-sm text-muted-foreground">Every request, end to end.</p>
-</div>
-
-<div class="mb-8 grid grid-cols-3 gap-4 max-w-xl">
-	{#each [{ label: 'Active', value: active }, { label: 'Completed', value: completed }, { label: 'Failed', value: failed }] as tile (tile.label)}
-		<div class="rounded-lg border border-border bg-card p-4">
-			<div class="text-2xl font-semibold tabular-nums">{tile.value}</div>
-			<div class="text-xs text-muted-foreground">{tile.label}</div>
+<div class="mb-6 flex items-end justify-between gap-4">
+	<div>
+		<h1 class="text-xl font-semibold tracking-tight">Flow</h1>
+		<p class="text-sm text-muted-foreground">Every request, end to end.</p>
+	</div>
+	<div class="flex items-center gap-2">
+		<input
+			type="search"
+			placeholder="Search…"
+			bind:value={query}
+			oninput={onSearch}
+			class="h-8 w-44 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+		/>
+		<div class="flex rounded-md border border-border p-0.5">
+			{#each filters as f (f.key)}
+				<button
+					onclick={() => (filter = f.key)}
+					class={cn(
+						'rounded px-2.5 py-1 text-xs transition-colors',
+						filter === f.key ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+					)}
+				>
+					{f.label}
+				</button>
+			{/each}
 		</div>
-	{/each}
+	</div>
 </div>
 
-<div class="flex max-w-xl flex-col items-center rounded-lg border border-dashed border-border py-16 text-center">
-	<div class="text-sm font-medium">No tracked requests yet</div>
-	<p class="mt-1 max-w-sm text-xs text-muted-foreground">
-		Pipeline ingestion (Seerr / Sonarr / Radarr webhooks) lands with milestone 1. Until then, the
-		Services page shows the health of the whole stack.
-	</p>
-	<a
-		href="/services"
-		class="mt-4 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
-	>
-		View services
-	</a>
-</div>
+{#if requests.length === 0 && loaded}
+	<div class="flex max-w-2xl flex-col items-center rounded-lg border border-dashed border-border py-16 text-center">
+		<div class="text-sm font-medium">
+			{filter === 'active' ? 'Nothing in flight' : 'No requests found'}
+		</div>
+		<p class="mt-1 max-w-sm text-xs text-muted-foreground">
+			New Seerr requests and arr grabs appear here automatically, live.
+		</p>
+	</div>
+{:else}
+	<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+		{#each requests as r (r.id)}
+			<PipelineCard request={r} />
+		{/each}
+	</div>
+{/if}

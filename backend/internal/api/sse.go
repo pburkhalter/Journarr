@@ -13,12 +13,26 @@ import (
 // clients are expected to refetch on receipt, so a lost patch heals itself
 // on the next event or reconnect.
 type Broker struct {
-	mu   sync.Mutex
-	subs map[chan []byte]struct{}
+	mu     sync.Mutex
+	subs   map[chan []byte]struct{}
+	done   chan struct{}
+	closed bool
 }
 
 func NewBroker() *Broker {
-	return &Broker{subs: map[chan []byte]struct{}{}}
+	return &Broker{subs: map[chan []byte]struct{}{}, done: make(chan struct{})}
+}
+
+// Shutdown releases every connected SSE handler so http.Server.Shutdown can
+// complete — without it, one connected dashboard makes every stop take the
+// full shutdown timeout.
+func (b *Broker) Shutdown() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.closed {
+		b.closed = true
+		close(b.done)
+	}
 }
 
 func (b *Broker) Publish(event string, data any) {
@@ -73,6 +87,8 @@ func (b *Broker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-b.done:
 			return
 		case msg := <-ch:
 			if _, err := w.Write(msg); err != nil {

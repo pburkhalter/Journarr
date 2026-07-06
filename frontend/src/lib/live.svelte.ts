@@ -10,8 +10,13 @@ class LiveStore {
 	services = $state<Record<string, ServiceHealth>>({});
 	connected = $state(false);
 	me = $state<Me | null>(null);
+	/** bumped on every pipeline change — pages refetch via $effect */
+	pipelineTick = $state(0);
+	/** live download progress, keyed by download id */
+	progress = $state<Record<number, { bytes_downloaded: number; bytes_total: number }>>({});
 
 	private es: EventSource | undefined;
+	private tickTimer: ReturnType<typeof setTimeout> | undefined;
 
 	start() {
 		if (this.es) return;
@@ -21,6 +26,8 @@ class LiveStore {
 		this.es.onopen = () => {
 			this.connected = true;
 			void this.refresh();
+			// heal pipeline views too — events during a disconnect are gone
+			this.pipelineTick++;
 		};
 		this.es.onerror = () => {
 			this.connected = false;
@@ -31,6 +38,25 @@ class LiveStore {
 				this.services[h.service] = h;
 			} catch {
 				// malformed frame — next poll pass refreshes the row anyway
+			}
+		});
+		const bump = () => {
+			// debounce: a season import fires dozens of media.stage events
+			clearTimeout(this.tickTimer);
+			this.tickTimer = setTimeout(() => this.pipelineTick++, 400);
+		};
+		this.es.addEventListener('media.stage', bump);
+		this.es.addEventListener('request.updated', bump);
+		this.es.addEventListener('download.progress', (e) => {
+			try {
+				const p = JSON.parse((e as MessageEvent).data) as {
+					download_id: number;
+					bytes_downloaded: number;
+					bytes_total: number;
+				};
+				this.progress[p.download_id] = p;
+			} catch {
+				// ignore
 			}
 		});
 	}

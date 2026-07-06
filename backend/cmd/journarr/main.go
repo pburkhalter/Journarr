@@ -15,11 +15,51 @@ import (
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/clients"
 	"github.com/pburkhalter/journarr/internal/config"
+	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/logger"
+	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/poll"
 	"github.com/pburkhalter/journarr/internal/store"
 	"github.com/pburkhalter/journarr/internal/web"
 )
+
+// stack bundles the upstream API clients (nil = not configured).
+type stack struct {
+	Seerr    *clients.Seerr
+	Sonarr   *clients.Arr
+	Radarr   *clients.Arr
+	Prowlarr *clients.Arr
+	Arrarr   *clients.Arrarr
+	Jellyfin *clients.Jellyfin
+	Waha     *clients.Waha
+}
+
+func buildStack(cfg *config.Config) *stack {
+	t := cfg.UpstreamTimeout
+	s := &stack{}
+	if cfg.SeerrURL != "" {
+		s.Seerr = clients.NewSeerr(cfg.SeerrURL, cfg.SeerrAPIKey, t)
+	}
+	if cfg.SonarrURL != "" {
+		s.Sonarr = clients.NewArr("sonarr", cfg.SonarrURL, "/api/v3", cfg.SonarrAPIKey, t)
+	}
+	if cfg.RadarrURL != "" {
+		s.Radarr = clients.NewArr("radarr", cfg.RadarrURL, "/api/v3", cfg.RadarrAPIKey, t)
+	}
+	if cfg.ProwlarrURL != "" {
+		s.Prowlarr = clients.NewArr("prowlarr", cfg.ProwlarrURL, "/api/v1", cfg.ProwlarrAPIKey, t)
+	}
+	if cfg.ArrarrURL != "" {
+		s.Arrarr = clients.NewArrarr(cfg.ArrarrURL, cfg.ArrarrAPIKey, t)
+	}
+	if cfg.JellyfinURL != "" {
+		s.Jellyfin = clients.NewJellyfin(cfg.JellyfinURL, cfg.JellyfinAPIKey, t)
+	}
+	if cfg.WahaURL != "" {
+		s.Waha = clients.NewWaha(cfg.WahaURL, cfg.WahaAPIKey, t)
+	}
+	return s
+}
 
 var versionStr = "dev"
 
@@ -63,8 +103,9 @@ func run() error {
 	}
 
 	broker := api.NewBroker()
+	stk := buildStack(cfg)
 
-	checks := buildChecks(cfg)
+	checks := buildChecks(stk)
 	if len(checks) == 0 {
 		log.Warn("no services configured — set SEERR_URL, SONARR_URL, … to monitor the stack")
 	} else {
@@ -78,6 +119,58 @@ func run() error {
 		go hp.Run(ctx)
 		log.Info("health poller started", "services", len(checks), "interval", cfg.HealthInterval.String())
 	}
+
+	// Pipeline: projector + ingestion + reconciling pollers.
+	projector := pipeline.New(st, log, broker.Publish, stk.Sonarr, stk.Radarr)
+	go projector.Run(ctx)
+
+	var ing *ingest.Handler
+	if cfg.WebhookToken != "" {
+		ing = &ingest.Handler{Store: st, Log: log, Token: cfg.WebhookToken, Wake: projector.Wake}
+		log.Info("webhook ingestion enabled", "sources", "seerr, sonarr, radarr")
+	} else {
+		log.Warn("JOURNARR_WEBHOOK_TOKEN not set — webhook ingestion disabled, pollers only")
+	}
+
+	if stk.Seerr != nil {
+		go (&poll.SeerrRequestPoller{
+			Store: st, Log: log, Seerr: stk.Seerr,
+			Interval: cfg.SeerrPollInterval, Wake: projector.Wake,
+		}).Run(ctx)
+	}
+	var queueArrs []*clients.Arr
+	for _, arr := range []*clients.Arr{stk.Sonarr, stk.Radarr} {
+		if arr == nil {
+			continue
+		}
+		queueArrs = append(queueArrs, arr)
+		go (&poll.ArrHistoryPoller{
+			Store: st, Log: log, Arr: arr,
+			Interval: cfg.HistoryPollInterval, Wake: projector.Wake,
+		}).Run(ctx)
+	}
+	if len(queueArrs) > 0 {
+		go (&poll.ArrQueuePoller{
+			Store: st, Log: log, Arrs: queueArrs,
+			Interval: cfg.QueuePollInterval, Publish: broker.Publish,
+		}).Run(ctx)
+	}
+
+	// Daily events reaper.
+	go func() {
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if n, err := st.ReapEvents(ctx, cfg.EventsRetentionDays); err == nil && n > 0 {
+					log.Info("reaper: pruned events", "count", n)
+				}
+			}
+		}
+	}()
 
 	authn := auth.New(auth.Config{
 		IssuerURL:     cfg.OIDCIssuerURL,
@@ -99,6 +192,7 @@ func run() error {
 		Store:   st,
 		Broker:  broker,
 		Auth:    authn,
+		Ingest:  ing,
 		Log:     log,
 		Version: versionStr,
 		Dist:    web.Dist(),
@@ -122,41 +216,34 @@ func run() error {
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
+	broker.Shutdown() // release SSE handlers so Shutdown() can drain
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
 }
 
-func buildChecks(cfg *config.Config) []poll.Check {
-	t := cfg.UpstreamTimeout
+func buildChecks(s *stack) []poll.Check {
 	var checks []poll.Check
-	if cfg.SeerrURL != "" {
-		c := clients.NewSeerr(cfg.SeerrURL, cfg.SeerrAPIKey, t)
-		checks = append(checks, poll.Check{Service: "seerr", Fn: c.CheckHealth})
+	if s.Seerr != nil {
+		checks = append(checks, poll.Check{Service: "seerr", Fn: s.Seerr.CheckHealth})
 	}
-	if cfg.SonarrURL != "" {
-		c := clients.NewArr("sonarr", cfg.SonarrURL, "/api/v3", cfg.SonarrAPIKey, t)
-		checks = append(checks, poll.Check{Service: "sonarr", Fn: c.CheckHealth})
+	if s.Sonarr != nil {
+		checks = append(checks, poll.Check{Service: "sonarr", Fn: s.Sonarr.CheckHealth})
 	}
-	if cfg.RadarrURL != "" {
-		c := clients.NewArr("radarr", cfg.RadarrURL, "/api/v3", cfg.RadarrAPIKey, t)
-		checks = append(checks, poll.Check{Service: "radarr", Fn: c.CheckHealth})
+	if s.Radarr != nil {
+		checks = append(checks, poll.Check{Service: "radarr", Fn: s.Radarr.CheckHealth})
 	}
-	if cfg.ProwlarrURL != "" {
-		c := clients.NewArr("prowlarr", cfg.ProwlarrURL, "/api/v1", cfg.ProwlarrAPIKey, t)
-		checks = append(checks, poll.Check{Service: "prowlarr", Fn: c.CheckHealth})
+	if s.Prowlarr != nil {
+		checks = append(checks, poll.Check{Service: "prowlarr", Fn: s.Prowlarr.CheckHealth})
 	}
-	if cfg.ArrarrURL != "" {
-		c := clients.NewArrarr(cfg.ArrarrURL, cfg.ArrarrAPIKey, t)
-		checks = append(checks, poll.Check{Service: "arrarr", Fn: c.CheckHealth})
+	if s.Arrarr != nil {
+		checks = append(checks, poll.Check{Service: "arrarr", Fn: s.Arrarr.CheckHealth})
 	}
-	if cfg.JellyfinURL != "" {
-		c := clients.NewJellyfin(cfg.JellyfinURL, cfg.JellyfinAPIKey, t)
-		checks = append(checks, poll.Check{Service: "jellyfin", Fn: c.CheckHealth})
+	if s.Jellyfin != nil {
+		checks = append(checks, poll.Check{Service: "jellyfin", Fn: s.Jellyfin.CheckHealth})
 	}
-	if cfg.WahaURL != "" {
-		c := clients.NewWaha(cfg.WahaURL, cfg.WahaAPIKey, t)
-		checks = append(checks, poll.Check{Service: "waha", Fn: c.CheckHealth})
+	if s.Waha != nil {
+		checks = append(checks, poll.Check{Service: "waha", Fn: s.Waha.CheckHealth})
 	}
 	return checks
 }

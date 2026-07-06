@@ -22,6 +22,11 @@ type Config struct {
 	HealthInterval  time.Duration `env:"HEALTH_POLL_INTERVAL" envDefault:"45s"`
 	UpstreamTimeout time.Duration `env:"UPSTREAM_TIMEOUT" envDefault:"10s"`
 
+	SeerrPollInterval   time.Duration `env:"SEERR_POLL_INTERVAL" envDefault:"5m"`
+	HistoryPollInterval time.Duration `env:"ARR_HISTORY_POLL_INTERVAL" envDefault:"2m"`
+	QueuePollInterval   time.Duration `env:"ARR_QUEUE_POLL_INTERVAL" envDefault:"60s"`
+	EventsRetentionDays int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
+
 	// Services with an empty URL are simply not monitored/ingested.
 	SeerrURL    string `env:"SEERR_URL"`
 	SeerrAPIKey string `env:"SEERR_API_KEY"`
