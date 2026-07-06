@@ -123,8 +123,13 @@ func (s *Store) RecomputeRequestStatus(ctx context.Context, id int64) (string, e
 	if err != nil {
 		return "", err
 	}
+	if total == 0 {
+		// No items to derive from (e.g. tv request closed out directly) —
+		// never override an explicitly set status.
+		return status, nil
+	}
 	next := "active"
-	if total > 0 && done == total {
+	if done == total {
 		next = "completed"
 	}
 	if next != status {

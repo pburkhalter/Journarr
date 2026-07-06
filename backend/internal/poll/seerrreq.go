@@ -37,6 +37,13 @@ func (p *SeerrRequestPoller) Run(ctx context.Context) {
 }
 
 func (p *SeerrRequestPoller) pass(ctx context.Context) {
+	cursor, err := p.Store.GetPollCursor(ctx, "seerr:requests")
+	if err != nil {
+		p.Log.Warn("seerr poll: cursor", "err", err)
+		return
+	}
+	firstRun := cursor == ""
+
 	reqs, err := p.Seerr.RecentRequests(ctx, 50)
 	if err != nil {
 		p.Log.Warn("seerr poll: list requests", "err", err)
@@ -46,6 +53,14 @@ func (p *SeerrRequestPoller) pass(ctx context.Context) {
 	for _, r := range reqs {
 		kind := seerrStatusKind(r)
 		if kind == "" {
+			continue
+		}
+		// First run on a fresh install: backfill only finished history
+		// (available → completed). Ingesting old approved/processing
+		// requests would fan them out as false in-flight work — the sweep
+		// would create hundreds of "approved" items for long-downloaded
+		// shows. Anything genuinely active resurfaces on its next change.
+		if firstRun && kind != "available" {
 			continue
 		}
 		op := pipeline.SeerrOp{
@@ -72,6 +87,11 @@ func (p *SeerrRequestPoller) pass(ctx context.Context) {
 			p.Log.Warn("seerr poll: insert event", "err", err)
 		} else if ok {
 			inserted++
+		}
+	}
+	if firstRun {
+		if err := p.Store.SetPollCursor(ctx, "seerr:requests", "initialized"); err != nil {
+			p.Log.Warn("seerr poll: save cursor", "err", err)
 		}
 	}
 	if inserted > 0 {

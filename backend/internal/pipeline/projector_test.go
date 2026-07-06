@@ -147,6 +147,33 @@ func TestRegrabStartsNewCycle(t *testing.T) {
 	}
 }
 
+func TestAvailableTVWithoutItemsCompletesDirectly(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	// Backfill case: an old tv request arrives straight as 'available'
+	// (media long since downloaded, no items ever tracked).
+	emit(t, s, "seerr", "available", SeerrOp{
+		SeerrRequestID: 11, Kind: "available", MediaType: "tv", TvdbID: 999, Title: "Old Show",
+	})
+	p.drain(ctx)
+
+	req, _ := s.FindRequestBySeerrID(ctx, 11)
+	if req.Status != "completed" {
+		t.Fatalf("zero-item available tv request must complete, got %s", req.Status)
+	}
+	// The rollup must not flip it back to active (0 items).
+	st, err := s.RecomputeRequestStatus(ctx, req.ID)
+	if err != nil || st != "completed" {
+		t.Fatalf("recompute overrode explicit status: %s err=%v", st, err)
+	}
+	// And the fan-out sweep must ignore it.
+	pending, _ := s.ActiveTVRequestsWithoutItems(ctx)
+	if len(pending) != 0 {
+		t.Fatalf("completed request leaked into fanout sweep: %+v", pending)
+	}
+}
+
 func TestLateEventsForSupersededDownloadStayInTheirCycle(t *testing.T) {
 	ctx := context.Background()
 	p, s := testProjector(t)

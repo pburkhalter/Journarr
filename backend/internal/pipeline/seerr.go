@@ -66,6 +66,15 @@ func (p *Projector) applySeerr(ctx context.Context, eventID int64, op SeerrOp) (
 			p.ensureMovieItem(ctx, reqID, op)
 			items, _ = p.Store.ListItemsForRequest(ctx, reqID)
 		}
+		if op.MediaType == "tv" && len(items) == 0 {
+			// Nothing was ever tracked (backfill / pre-Journarr request) but
+			// Seerr says it's available — close it out instead of leaving a
+			// zero-item request "active" forever.
+			if err := p.Store.SetRequestStatus(ctx, reqID, "completed"); err != nil {
+				p.Log.Warn("seerr: complete empty tv request", "request", reqID, "err", err)
+			}
+			return "matched", reqID, 0, 0
+		}
 		for _, it := range items {
 			p.apply(ctx, it.ID, reqID, eventID, "available", "seerr MEDIA_AVAILABLE")
 		}
