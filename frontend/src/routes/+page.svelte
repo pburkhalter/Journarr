@@ -48,20 +48,20 @@
 	] as const;
 </script>
 
-<div class="mb-6 flex items-end justify-between gap-4">
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
 	<div>
 		<h1 class="text-xl font-semibold tracking-tight">Flow</h1>
 		<p class="text-sm text-muted-foreground">Every request, end to end.</p>
 	</div>
-	<div class="flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-2">
 		<input
 			type="search"
 			placeholder="Search…"
 			bind:value={query}
 			oninput={onSearch}
-			class="h-8 w-44 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+			class="h-8 min-w-0 flex-1 basis-40 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring sm:w-44 sm:flex-none sm:basis-auto"
 		/>
-		<div class="flex rounded-md border border-border p-0.5">
+		<div class="flex shrink-0 rounded-md border border-border p-0.5">
 			{#each filters as f (f.key)}
 				<button
 					onclick={() => (filter = f.key)}

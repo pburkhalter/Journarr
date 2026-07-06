@@ -30,7 +30,7 @@
 
 <a
 	href="/requests/{request.id}"
-	class="group flex gap-3.5 rounded-lg border border-border bg-card p-3.5 transition-colors hover:border-ring/40"
+	class="group flex min-w-0 gap-3.5 rounded-lg border border-border bg-card p-3.5 transition-colors hover:border-ring/40"
 >
 	{#if safePoster}
 		<img
