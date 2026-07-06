@@ -8,6 +8,8 @@ export interface ServiceHealth {
 	/** raw JSON blob with per-service extras — parse with parseDetail() */
 	detail?: string;
 	checked_at: string;
+	/** GitHub release-update status for the self-hosted custom stack */
+	update?: { current: string; latest: string; update_available: boolean };
 }
 
 export interface TorboxCreate {

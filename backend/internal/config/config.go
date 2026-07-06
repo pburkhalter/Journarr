@@ -28,6 +28,7 @@ type Config struct {
 	JellyfinPollInterval time.Duration `env:"JELLYFIN_POLL_INTERVAL" envDefault:"2m"`
 	PresencePollInterval time.Duration `env:"PRESENCE_POLL_INTERVAL" envDefault:"10m"`
 	StuckPollInterval    time.Duration `env:"STUCK_POLL_INTERVAL" envDefault:"5m"`
+	UpdateCheckInterval  time.Duration `env:"UPDATE_CHECK_INTERVAL" envDefault:"6h"`
 	EventsRetentionDays  int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
 
 	// Services with an empty URL are simply not monitored/ingested.

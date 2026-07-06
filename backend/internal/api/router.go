@@ -18,6 +18,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/store"
+	"github.com/pburkhalter/journarr/internal/updates"
 )
 
 type Deps struct {
@@ -26,6 +27,7 @@ type Deps struct {
 	Auth    *auth.Auth
 	Ingest  *ingest.Handler // nil = no webhook ingestion
 	Actions *actions.Actions
+	Updates *updates.Checker // nil = no update checks
 	Log     *slog.Logger
 	Version string
 	Dist    fs.FS // built frontend; may be empty pre-build
@@ -71,7 +73,22 @@ func NewRouter(d Deps) http.Handler {
 					httpError(w, d.Log, "list services", err)
 					return
 				}
-				writeJSON(w, map[string]any{"services": list})
+				// Merge in the GitHub update status for the custom stack.
+				type svc struct {
+					store.ServiceHealth
+					Update *updates.Info `json:"update,omitempty"`
+				}
+				out := make([]svc, 0, len(list))
+				for _, h := range list {
+					s := svc{ServiceHealth: h}
+					if d.Updates != nil {
+						if info, ok := d.Updates.Get(h.Service); ok {
+							s.Update = &info
+						}
+					}
+					out = append(out, s)
+				}
+				writeJSON(w, map[string]any{"services": out})
 			})
 			r.Get("/stats", func(w http.ResponseWriter, req *http.Request) {
 				st, err := d.Store.FetchStats(req.Context())

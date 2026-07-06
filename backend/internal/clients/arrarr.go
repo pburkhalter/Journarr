@@ -23,6 +23,7 @@ func NewArrarr(baseURL, apiKey string, timeout time.Duration) *Arrarr {
 // StatusJSON mirrors arrarr's /status.json response.
 type ArrarrStatus struct {
 	GeneratedAt  string         `json:"generated_at"`
+	Version      string         `json:"version"`
 	States       map[string]int `json:"states"`
 	TorboxCreate *struct {
 		Available int `json:"available"`
@@ -51,5 +52,5 @@ func (c *Arrarr) CheckHealth(ctx context.Context) HealthResult {
 			"capacity":  body.TorboxCreate.Capacity,
 		}
 	}
-	return HealthResult{Status: "up", Latency: lat, Detail: detail}
+	return HealthResult{Status: "up", Latency: lat, Version: body.Version, Detail: detail}
 }

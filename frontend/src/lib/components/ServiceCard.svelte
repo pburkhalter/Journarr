@@ -43,9 +43,19 @@
 				</div>
 			</div>
 		</div>
-		<span class={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', badge[service.status])}>
-			{service.status}
-		</span>
+		<div class="flex shrink-0 items-center gap-1.5">
+			{#if service.update?.update_available}
+				<span
+					class="rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-medium text-info"
+					title="Update available: {service.update.current} → {service.update.latest}"
+				>
+					↑ {service.update.latest}
+				</span>
+			{/if}
+			<span class={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', badge[service.status])}>
+				{service.status}
+			</span>
+		</div>
 	</div>
 
 	<div class="mt-3 flex items-center gap-3 text-[11px] text-muted-foreground">

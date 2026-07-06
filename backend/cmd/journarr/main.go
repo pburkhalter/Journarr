@@ -21,6 +21,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/poll"
 	"github.com/pburkhalter/journarr/internal/store"
+	"github.com/pburkhalter/journarr/internal/updates"
 	"github.com/pburkhalter/journarr/internal/web"
 )
 
@@ -214,6 +215,20 @@ func run() error {
 		Wake: projector.Wake, Publish: broker.Publish,
 	}
 
+	// GitHub update checker for the self-hosted custom stack. Only services
+	// that expose a semver build on their health surface can be compared;
+	// arrarr does (via /status.json version). concierge/journarr can be added
+	// here once they surface their version too.
+	updateRepos := map[string]string{}
+	if stk.Arrarr != nil {
+		updateRepos["arrarr"] = "pburkhalter/arrarr"
+	}
+	var updateChecker *updates.Checker
+	if len(updateRepos) > 0 {
+		updateChecker = updates.NewChecker(st, log, cfg.UpdateCheckInterval, updateRepos)
+		go updateChecker.Run(ctx)
+	}
+
 	// Stuck sweeper: flag active items that stopped progressing. First run
 	// delayed so the presence reconciler clears already-present items first.
 	go func() {
@@ -248,6 +263,7 @@ func run() error {
 		Auth:    authn,
 		Ingest:  ing,
 		Actions: acts,
+		Updates: updateChecker,
 		Log:     log,
 		Version: versionStr,
 		Dist:    web.Dist(),
