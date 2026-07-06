@@ -90,6 +90,7 @@ type JobTransitionOp struct {
 type AvailableOp struct {
 	MediaItemID    int64  `json:"media_item_id"`
 	JellyfinItemID string `json:"jellyfin_item_id,omitempty"`
+	Note           string `json:"note,omitempty"` // provenance, e.g. "jellyfin" or reconciled
 }
 
 // EpisodeNum identifies an episode within a series notification.

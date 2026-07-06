@@ -26,13 +26,25 @@ type Episode struct {
 	Title         string `json:"title"`
 	AirDateUTC    string `json:"airDateUtc"`
 	Monitored     bool   `json:"monitored"`
+	HasFile       bool   `json:"hasFile"` // episode file already on disk / imported
 }
 
 type Movie struct {
-	ID     int64  `json:"id"`
-	Title  string `json:"title"`
-	TmdbID int64  `json:"tmdbId"`
-	Year   int64  `json:"year"`
+	ID      int64  `json:"id"`
+	Title   string `json:"title"`
+	TmdbID  int64  `json:"tmdbId"`
+	Year    int64  `json:"year"`
+	HasFile bool   `json:"hasFile"` // movie file already on disk / imported
+}
+
+// MovieByID fetches a single Radarr movie (for hasFile reconciliation).
+func (c *Arr) MovieByID(ctx context.Context, id int64) (*Movie, error) {
+	var m Movie
+	if _, err := getJSON(ctx, c.HTTP,
+		fmt.Sprintf("%s%s/movie/%d", c.BaseURL, c.APIBase, id), c.headers(), &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // SeriesByTvdbID returns nil when the series is not (yet) in Sonarr.

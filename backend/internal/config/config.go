@@ -26,6 +26,7 @@ type Config struct {
 	HistoryPollInterval  time.Duration `env:"ARR_HISTORY_POLL_INTERVAL" envDefault:"2m"`
 	QueuePollInterval    time.Duration `env:"ARR_QUEUE_POLL_INTERVAL" envDefault:"60s"`
 	JellyfinPollInterval time.Duration `env:"JELLYFIN_POLL_INTERVAL" envDefault:"2m"`
+	PresencePollInterval time.Duration `env:"PRESENCE_POLL_INTERVAL" envDefault:"10m"`
 	EventsRetentionDays  int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
 
 	// Services with an empty URL are simply not monitored/ingested.

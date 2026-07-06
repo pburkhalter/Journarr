@@ -147,7 +147,11 @@ func (p *Projector) applyAvailable(ctx context.Context, eventID int64, op Availa
 	if item.RequestID != nil {
 		reqID = *item.RequestID
 	}
-	p.apply(ctx, item.ID, reqID, eventID, "available", "jellyfin")
+	note := op.Note
+	if note == "" {
+		note = "jellyfin"
+	}
+	p.apply(ctx, item.ID, reqID, eventID, "available", note)
 	return "matched", reqID, item.ID, 0
 }
 

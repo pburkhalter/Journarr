@@ -162,6 +162,14 @@ func run() error {
 			Interval: cfg.JellyfinPollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
+	// Presence reconciler: advance already-on-disk (arr hasFile) items that
+	// pre-date Journarr or aged out of the Jellyfin recent window.
+	if stk.Sonarr != nil || stk.Radarr != nil {
+		go (&poll.PresencePoller{
+			Store: st, Log: log, Sonarr: stk.Sonarr, Radarr: stk.Radarr,
+			Interval: cfg.PresencePollInterval, Wake: projector.Wake,
+		}).Run(ctx)
+	}
 
 	// Daily events reaper.
 	go func() {

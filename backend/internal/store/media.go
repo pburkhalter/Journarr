@@ -175,6 +175,30 @@ func (s *Store) SetItemJellyfinID(ctx context.Context, id int64, jellyfinID stri
 	return err
 }
 
+// ListUnavailableActiveItems returns tracked items in active requests that
+// have not yet reached 'available' — the working set for the presence
+// reconciler (which advances items whose file already exists in the arr).
+func (s *Store) ListUnavailableActiveItems(ctx context.Context) ([]MediaItem, error) {
+	rows, err := s.db.QueryContext(ctx, itemSelect+`
+		WHERE request_id IN (SELECT id FROM requests WHERE status = 'active')
+		AND (SELECT ordinal FROM stages WHERE key = media_items.current_stage)
+			< (SELECT ordinal FROM stages WHERE key = 'available')
+		ORDER BY sonarr_series_id, radarr_movie_id, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MediaItem{}
+	for rows.Next() {
+		m, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *m)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ListItemsForRequest(ctx context.Context, requestID int64) ([]MediaItem, error) {
 	rows, err := s.db.QueryContext(ctx,
 		itemSelect+` WHERE request_id = ? ORDER BY season_number, episode_number, id`, requestID)

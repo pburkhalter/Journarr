@@ -118,6 +118,38 @@ func TestRequestRollupStatus(t *testing.T) {
 	}
 }
 
+func TestListUnavailableActiveItems(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+
+	// Active request with two episodes: one approved (unavailable), one available.
+	reqID, _ := s.InsertOrphanRequest(ctx, "tv", "Show", nil, nil)
+	s1, e1, e2 := int64(1), int64(1), int64(2)
+	sid, ep1, ep2 := int64(10), int64(101), int64(102)
+	i1, _ := s.EnsureMediaItem(ctx, MediaItem{RequestID: &reqID, MediaType: "episode", SonarrSeriesID: &sid, SonarrEpisodeID: &ep1, SeasonNumber: &s1, EpisodeNumber: &e1})
+	i2, _ := s.EnsureMediaItem(ctx, MediaItem{RequestID: &reqID, MediaType: "episode", SonarrSeriesID: &sid, SonarrEpisodeID: &ep2, SeasonNumber: &s1, EpisodeNumber: &e2})
+	_, _ = s.ApplyStage(ctx, i1, 1, "approved", 0, "")
+	_, _ = s.ApplyStage(ctx, i2, 1, "available", 0, "")
+
+	// A completed request's items must be excluded even if below available.
+	doneReq, _ := s.InsertOrphanRequest(ctx, "movie", "Old", nil, nil)
+	_ = s.SetRequestStatus(ctx, doneReq, "completed")
+	mid := int64(55)
+	im, _ := s.EnsureMediaItem(ctx, MediaItem{RequestID: &doneReq, MediaType: "movie", RadarrMovieID: &mid})
+	_, _ = s.ApplyStage(ctx, im, 1, "approved", 0, "")
+
+	got, err := s.ListUnavailableActiveItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != i1 {
+		t.Fatalf("want only the approved episode of the active request, got %+v", got)
+	}
+	if got[0].SonarrEpisodeID == nil || *got[0].SonarrEpisodeID != ep1 {
+		t.Fatalf("sonarr ids not carried through: %+v", got[0])
+	}
+}
+
 func TestDownloadUpsertAndInfohashReuse(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
