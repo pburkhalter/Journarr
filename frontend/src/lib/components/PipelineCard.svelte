@@ -58,9 +58,16 @@
 					{relativeTime(request.updated_at)}
 				</div>
 			</div>
-			<span class={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', statusBadge[request.status])}>
-				{request.status}
-			</span>
+			<div class="flex shrink-0 items-center gap-1.5">
+				{#if request.stuck_count > 0}
+					<span class="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning" title="{request.stuck_count} item(s) stuck">
+						⏳ {request.stuck_count}
+					</span>
+				{/if}
+				<span class={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', statusBadge[request.status])}>
+					{request.status}
+				</span>
+			</div>
 		</div>
 
 		<div class="mt-3">

@@ -1,12 +1,49 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { getMediaEvents, getRequestDetail } from '$lib/api';
+	import { cancelRequest, getMediaEvents, getRequestDetail, retryItem } from '$lib/api';
 	import StageBadge from '$lib/components/StageBadge.svelte';
 	import StageStrip from '$lib/components/StageStrip.svelte';
 	import StageTimeline from '$lib/components/StageTimeline.svelte';
+	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
 	import type { ItemDetail, RawEvent, RequestDetail } from '$lib/types';
 	import { cn, relativeTime } from '$lib/utils';
+
+	let busy = $state(false);
+
+	async function doCancel() {
+		if (!detail) return;
+		const ok = await confirm.ask({
+			title: 'Cancel request',
+			message: `Stop "${detail.request.title}"? In-flight downloads are cancelled and the Seerr request is removed. The series/movie itself stays in Sonarr/Radarr.`,
+			confirmLabel: 'Cancel request',
+			danger: true
+		});
+		if (!ok) return;
+		busy = true;
+		try {
+			await cancelRequest(id);
+			await loadDetail(id);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function doRetry(item: ItemDetail) {
+		const ok = await confirm.ask({
+			title: 'Retry download',
+			message: `Blocklist the current release for "${item.title || epLabel(item)}" and search again?`,
+			confirmLabel: 'Retry'
+		});
+		if (!ok) return;
+		busy = true;
+		try {
+			await retryItem(item.id);
+			await loadDetail(id);
+		} finally {
+			busy = false;
+		}
+	}
 
 	const id = $derived(Number(page.params.id));
 
@@ -102,10 +139,21 @@
 			<img src={detail.request.poster_url} alt="" class="h-36 w-24 rounded-md object-cover bg-muted" />
 		{/if}
 		<div class="min-w-0 flex-1">
-			<h1 class="text-xl font-semibold tracking-tight">
-				{detail.request.title}
-				{#if detail.request.year}<span class="font-normal text-muted-foreground">({detail.request.year})</span>{/if}
-			</h1>
+			<div class="flex items-start justify-between gap-3">
+				<h1 class="text-xl font-semibold tracking-tight">
+					{detail.request.title}
+					{#if detail.request.year}<span class="font-normal text-muted-foreground">({detail.request.year})</span>{/if}
+				</h1>
+				{#if detail.request.status === 'active' || detail.request.status === 'partial'}
+					<button
+						onclick={doCancel}
+						disabled={busy}
+						class="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+					>
+						Cancel request
+					</button>
+				{/if}
+			</div>
 			<div class="mt-1 text-xs text-muted-foreground">
 				{detail.request.media_type === 'tv' ? 'Series' : 'Movie'}
 				{#if detail.request.requested_by}
@@ -192,6 +240,22 @@
 					{#if selected.title}<span class="font-normal">· {selected.title}</span>{/if}
 				</h2>
 				<div class="rounded-lg border border-border bg-card p-4">
+					{#if selected.current_stage !== 'available' && selected.current_stage !== 'notified'}
+						<div class="mb-3 flex justify-end">
+							<button
+								onclick={() => selected && doRetry(selected)}
+								disabled={busy}
+								class="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+							>
+								Retry
+							</button>
+						</div>
+					{/if}
+					{#if selected.stuck_since}
+						<p class="mb-3 rounded-md bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
+							⏳ Stuck — no progress since {relativeTime(selected.stuck_since)}
+						</p>
+					{/if}
 					{#if selected.last_error}
 						<p class="mb-3 break-all rounded-md bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive">
 							{selected.last_error}

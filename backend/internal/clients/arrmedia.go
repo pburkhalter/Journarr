@@ -1,10 +1,14 @@
 package clients
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -182,5 +186,81 @@ func (c *Arr) HistorySince(ctx context.Context, sinceID int64, maxPages int) ([]
 	return collected, complete, nil
 }
 
-// Escape helper for future query building.
+// DeleteQueueItem removes a queue record. removeFromClient cancels the job in
+// the download client (arrarr, via the shim); blocklist bans the release so a
+// re-search picks a different one.
+func (c *Arr) DeleteQueueItem(ctx context.Context, id int64, removeFromClient, blocklist bool) error {
+	u := fmt.Sprintf("%s%s/queue/%d?removeFromClient=%t&blocklist=%t",
+		c.BaseURL, c.APIBase, id, removeFromClient, blocklist)
+	return c.doDelete(ctx, u)
+}
+
+// Command posts an arr command (e.g. EpisodeSearch / MoviesSearch).
+func (c *Arr) Command(ctx context.Context, name string, extra map[string]any) error {
+	body := map[string]any{"name": name}
+	for k, v := range extra {
+		body[k] = v
+	}
+	return c.doJSON(ctx, http.MethodPost, c.BaseURL+c.APIBase+"/command", body)
+}
+
+// QueueRecordIDsForDownload returns the arr queue record ids sharing a
+// downloadId (a season pack has one per episode).
+func (c *Arr) QueueRecordIDsForDownload(ctx context.Context, downloadID string) ([]int64, error) {
+	records, err := c.Queue(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for _, r := range records {
+		if strings.EqualFold(r.DownloadID, downloadID) {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
+}
+
+func (c *Arr) doDelete(ctx context.Context, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	for k, v := range c.headers() {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s delete: status %d", c.Name, resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Arr) doJSON(ctx context.Context, method, url string, body any) error {
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range c.headers() {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s %s: status %d", c.Name, method, resp.StatusCode)
+	}
+	return nil
+}
+
 var _ = url.QueryEscape

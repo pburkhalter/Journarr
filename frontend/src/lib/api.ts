@@ -39,3 +39,20 @@ export async function getMediaEvents(id: number): Promise<RawEvent[]> {
 	const body = await get<{ events: RawEvent[] }>(`/api/media/${id}/events`);
 	return body.events ?? [];
 }
+
+async function post(path: string, body?: unknown): Promise<void> {
+	const res = await fetch(path, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: body ? JSON.stringify(body) : undefined
+	});
+	if (res.status === 401) {
+		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
+		throw new Error('unauthenticated');
+	}
+	if (!res.ok) throw new Error(`${path}: ${res.status}`);
+}
+
+export const retryItem = (mediaItemID: number) => post('/api/actions/retry', { media_item_id: mediaItemID });
+export const cancelRequest = (requestID: number) => post('/api/actions/cancel', { request_id: requestID });
+export const jellyfinScan = () => post('/api/actions/jellyfin-scan');

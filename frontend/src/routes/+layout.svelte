@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { page } from '$app/state';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { live } from '$lib/live.svelte';
 	import { cn } from '$lib/utils';
 	import { onMount } from 'svelte';
@@ -11,6 +12,7 @@
 
 	const nav = [
 		{ href: '/', label: 'Flow' },
+		{ href: '/history', label: 'History' },
 		{ href: '/services', label: 'Services' }
 	];
 </script>
@@ -52,9 +54,6 @@
 					{item.label}
 				</a>
 			{/each}
-			<span class="hidden cursor-default rounded-md px-3 py-2 text-sm text-muted-foreground/40 md:block">
-				History <span class="text-[10px]">(soon)</span>
-			</span>
 		</nav>
 		<div class="mt-auto hidden px-5 py-4 md:block">
 			{#if live.me?.auth_enabled && live.me.user}
@@ -91,3 +90,5 @@
 		{@render children()}
 	</main>
 </div>
+
+<ConfirmDialog />

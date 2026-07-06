@@ -165,6 +165,26 @@ func (s *Store) DownloadsForRequest(ctx context.Context, requestID int64) ([]Dow
 	return out, rows.Err()
 }
 
+// DownloadsForItemCycle returns downloads linked to an item within a cycle.
+func (s *Store) DownloadsForItemCycle(ctx context.Context, itemID int64, cycle int) ([]Download, error) {
+	rows, err := s.db.QueryContext(ctx, dlSelect+` WHERE id IN (
+			SELECT download_id FROM download_items WHERE media_item_id = ? AND cycle = ?)
+		ORDER BY id DESC`, itemID, cycle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Download{}
+	for rows.Next() {
+		d, err := scanDownload(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *d)
+	}
+	return out, rows.Err()
+}
+
 // ItemIDsForDownload lists the media items linked to a download.
 func (s *Store) ItemIDsForDownload(ctx context.Context, downloadID int64) ([]int64, error) {
 	rows, err := s.db.QueryContext(ctx,

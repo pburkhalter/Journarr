@@ -18,6 +18,7 @@ export interface TorboxCreate {
 export interface Stats {
 	requests: Record<string, number>;
 	media_items: Record<string, number>;
+	stuck?: number;
 }
 
 // Pipeline stages in ordinal order. 'transcode' ships inactive (Tdarr later).
@@ -57,6 +58,7 @@ export interface RequestRollup {
 	item_count: number;
 	stage_counts: Record<string, number>;
 	last_error?: string;
+	stuck_count: number;
 }
 
 export interface MediaItem {
@@ -70,6 +72,7 @@ export interface MediaItem {
 	current_cycle: number;
 	last_error?: string;
 	imported_path?: string;
+	stuck_since?: string;
 	updated_at: string;
 }
 

@@ -153,6 +153,7 @@ type RequestRollup struct {
 	ItemCount   int            `json:"item_count"`
 	StageCounts map[string]int `json:"stage_counts"`
 	LastError   string         `json:"last_error,omitempty"`
+	StuckCount  int            `json:"stuck_count"`
 }
 
 func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offset int) ([]RequestRollup, error) {
@@ -190,13 +191,14 @@ func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offse
 		return nil, err
 	}
 	for i := range out {
-		counts, itemCount, lastErr, err := s.stageCounts(ctx, out[i].ID)
+		counts, itemCount, lastErr, stuck, err := s.stageCounts(ctx, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		out[i].StageCounts = counts
 		out[i].ItemCount = itemCount
 		out[i].LastError = lastErr
+		out[i].StuckCount = stuck
 	}
 	return out, nil
 }
@@ -208,11 +210,11 @@ func (s *Store) RollupForRequest(ctx context.Context, id int64) (*RequestRollup,
 	if err != nil || r == nil {
 		return nil, err
 	}
-	counts, total, lastErr, err := s.stageCounts(ctx, id)
+	counts, total, lastErr, stuck, err := s.stageCounts(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return &RequestRollup{Request: *r, StageCounts: counts, ItemCount: total, LastError: lastErr}, nil
+	return &RequestRollup{Request: *r, StageCounts: counts, ItemCount: total, LastError: lastErr, StuckCount: stuck}, nil
 }
 
 // ActiveTVRequestsWithoutItems finds approved Seerr tv requests whose fan-out
@@ -238,33 +240,34 @@ func (s *Store) ActiveTVRequestsWithoutItems(ctx context.Context) ([]Request, er
 	return out, rows.Err()
 }
 
-func (s *Store) stageCounts(ctx context.Context, requestID int64) (map[string]int, int, string, error) {
+func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[string]int, total int, lastError string, stuck int, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT current_stage, COUNT(*) FROM media_items WHERE request_id = ? GROUP BY current_stage`, requestID)
 	if err != nil {
-		return nil, 0, "", err
+		return nil, 0, "", 0, err
 	}
 	defer rows.Close()
-	counts := map[string]int{}
-	total := 0
+	counts = map[string]int{}
 	for rows.Next() {
 		var k string
 		var n int
 		if err := rows.Scan(&k, &n); err != nil {
-			return nil, 0, "", err
+			return nil, 0, "", 0, err
 		}
 		counts[k] = n
 		total += n
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, "", err
+		return nil, 0, "", 0, err
 	}
 	var lastErr sql.NullString
 	_ = s.db.QueryRowContext(ctx, `
 		SELECT last_error FROM media_items
 		WHERE request_id = ? AND last_error IS NOT NULL AND last_error != ''
 		ORDER BY updated_at DESC LIMIT 1`, requestID).Scan(&lastErr)
-	return counts, total, lastErr.String, nil
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM media_items WHERE request_id = ? AND stuck_since IS NOT NULL`, requestID).Scan(&stuck)
+	return counts, total, lastErr.String, stuck, nil
 }
 
 const reqSelect = `SELECT id, seerr_request_id, media_type, tmdb_id, tvdb_id, title, year,

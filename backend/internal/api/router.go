@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/store"
@@ -22,6 +23,7 @@ type Deps struct {
 	Broker  *Broker
 	Auth    *auth.Auth
 	Ingest  *ingest.Handler // nil = no webhook ingestion
+	Actions *actions.Actions
 	Log     *slog.Logger
 	Version string
 	Dist    fs.FS // built frontend; may be empty pre-build
@@ -75,7 +77,8 @@ func NewRouter(d Deps) http.Handler {
 					httpError(w, d.Log, "fetch stats", err)
 					return
 				}
-				writeJSON(w, st)
+				stuck, _ := d.Store.CountStuck(req.Context())
+				writeJSON(w, map[string]any{"requests": st.Requests, "media_items": st.MediaItems, "stuck": stuck})
 			})
 			r.Get("/events/stream", d.Broker.ServeHTTP)
 
@@ -133,6 +136,42 @@ func NewRouter(d Deps) http.Handler {
 				writeJSON(w, map[string]any{
 					"request": request, "items": details, "downloads": downloads,
 				})
+			})
+
+			r.Post("/actions/jellyfin-scan", func(w http.ResponseWriter, req *http.Request) {
+				if err := d.Actions.JellyfinScan(req.Context()); err != nil {
+					httpError(w, d.Log, "jellyfin scan", err)
+					return
+				}
+				writeJSON(w, map[string]string{"status": "ok"})
+			})
+			r.Post("/actions/retry", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					MediaItemID int64 `json:"media_item_id"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.MediaItemID == 0 {
+					http.Error(w, "media_item_id required", http.StatusBadRequest)
+					return
+				}
+				if err := d.Actions.Retry(req.Context(), body.MediaItemID); err != nil {
+					httpError(w, d.Log, "retry", err)
+					return
+				}
+				writeJSON(w, map[string]string{"status": "ok"})
+			})
+			r.Post("/actions/cancel", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					RequestID int64 `json:"request_id"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.RequestID == 0 {
+					http.Error(w, "request_id required", http.StatusBadRequest)
+					return
+				}
+				if err := d.Actions.Cancel(req.Context(), body.RequestID); err != nil {
+					httpError(w, d.Log, "cancel", err)
+					return
+				}
+				writeJSON(w, map[string]string{"status": "ok"})
 			})
 
 			r.Get("/media/{id}/events", func(w http.ResponseWriter, req *http.Request) {

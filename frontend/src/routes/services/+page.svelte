@@ -1,6 +1,24 @@
 <script lang="ts">
+	import { jellyfinScan } from '$lib/api';
 	import ServiceCard from '$lib/components/ServiceCard.svelte';
+	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
+
+	let scanning = $state(false);
+	let scanMsg = $state('');
+	async function doScan() {
+		if (!(await confirm.ask({ title: 'Trigger Jellyfin scan', message: 'Start a full library refresh in Jellyfin?', confirmLabel: 'Scan' }))) return;
+		scanning = true;
+		scanMsg = '';
+		try {
+			await jellyfinScan();
+			scanMsg = 'scan triggered';
+		} catch {
+			scanMsg = 'failed';
+		} finally {
+			scanning = false;
+		}
+	}
 
 	// Stable display order: pipeline order, not alphabetical.
 	const order = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha'];
@@ -14,9 +32,21 @@
 	);
 </script>
 
-<div class="mb-6">
-	<h1 class="text-xl font-semibold tracking-tight">Services</h1>
-	<p class="text-sm text-muted-foreground">Live health of every tool in the pipeline.</p>
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+	<div>
+		<h1 class="text-xl font-semibold tracking-tight">Services</h1>
+		<p class="text-sm text-muted-foreground">Live health of every tool in the pipeline.</p>
+	</div>
+	<div class="flex items-center gap-2">
+		{#if scanMsg}<span class="text-[11px] text-muted-foreground">{scanMsg}</span>{/if}
+		<button
+			onclick={doScan}
+			disabled={scanning}
+			class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+		>
+			{scanning ? 'Scanning…' : 'Jellyfin scan'}
+		</button>
+	</div>
 </div>
 
 {#if sorted.length === 0}

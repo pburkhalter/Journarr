@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/api"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/clients"
@@ -203,11 +204,46 @@ func run() error {
 		log.Info("sso disabled — open access (set OIDC_ISSUER_URL to enable)")
 	}
 
+	acts := &actions.Actions{
+		Store: st, Log: log,
+		Sonarr: stk.Sonarr, Radarr: stk.Radarr, Seerr: stk.Seerr, Jelly: stk.Jellyfin,
+		Wake: projector.Wake, Publish: broker.Publish,
+	}
+
+	// Stuck sweeper: flag active items that stopped progressing. First run
+	// delayed so the presence reconciler clears already-present items first.
+	go func() {
+		thresholds := map[string]int{
+			"approved": 14400, "grabbed": 7200, "submitted": 3600,
+			"cloud_downloading": 21600, "pulling": 3600, "downloaded": 1800, "imported": 1800,
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Minute):
+		}
+		t := time.NewTicker(cfg.StuckPollInterval)
+		defer t.Stop()
+		for {
+			if n, err := st.MarkStuck(ctx, thresholds); err != nil {
+				log.Warn("stuck sweep", "err", err)
+			} else if n > 0 {
+				log.Info("stuck sweep: newly flagged", "count", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
 	router := api.NewRouter(api.Deps{
 		Store:   st,
 		Broker:  broker,
 		Auth:    authn,
 		Ingest:  ing,
+		Actions: acts,
 		Log:     log,
 		Version: versionStr,
 		Dist:    web.Dist(),

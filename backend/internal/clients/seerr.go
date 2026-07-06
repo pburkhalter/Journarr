@@ -125,6 +125,28 @@ func itoa64(n int64) string {
 	return string(b[i:])
 }
 
+// DeleteRequest removes a Seerr request (used by the cancel action).
+func (c *Seerr) DeleteRequest(ctx context.Context, id int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.BaseURL+"/api/v1/request/"+itoa64(id), nil)
+	if err != nil {
+		return err
+	}
+	for k, v := range c.headers() {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// 404 = already gone; treat as success.
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
+		return &APIError{Status: resp.StatusCode}
+	}
+	return nil
+}
+
 func (c *Seerr) CheckHealth(ctx context.Context) HealthResult {
 	var body struct {
 		Version       string `json:"version"`
