@@ -69,6 +69,29 @@ type FailureOp struct {
 	Movie      *MovieRef    `json:"movie,omitempty"`
 }
 
+// JobTransitionOp: an Arrarr job changed state (TorBox substages). Correlates
+// to a download by nzo_id (usenet/SAB) or nzb_sha256 (torrent infohash).
+type JobTransitionOp struct {
+	NzoID           string `json:"nzo_id"`
+	NzbSHA256       string `json:"nzb_sha256,omitempty"`
+	Source          string `json:"source,omitempty"` // usenet|torrent
+	From            string `json:"from,omitempty"`
+	To              string `json:"to"` // NEW|SUBMITTED|DOWNLOADING|COMPLETED_TORBOX|READY|FAILED|CANCELED
+	Filename        string `json:"filename,omitempty"`
+	SizeBytes       int64  `json:"size_bytes,omitempty"`
+	BytesDownloaded int64  `json:"bytes_downloaded,omitempty"`
+	BytesTotal      int64  `json:"bytes_total,omitempty"`
+	LocalPath       string `json:"local_path,omitempty"`
+	LastError       string `json:"last_error,omitempty"`
+}
+
+// AvailableOp: the Jellyfin poller matched a library item to a tracked media
+// item (matching is done in the poller; the projector just applies the stage).
+type AvailableOp struct {
+	MediaItemID    int64  `json:"media_item_id"`
+	JellyfinItemID string `json:"jellyfin_item_id,omitempty"`
+}
+
 // SeerrOp: request lifecycle signal, from webhook or the request poller.
 type SeerrOp struct {
 	SeerrRequestID int64   `json:"seerr_request_id"`

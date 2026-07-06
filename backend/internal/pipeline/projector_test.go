@@ -32,6 +32,83 @@ func emit(t *testing.T, s *store.Store, source, kind string, op any) {
 	}
 }
 
+// emitDedupe mirrors a poller emitting with a natural dedupe key; returns
+// whether the event was newly inserted (false = deduped).
+func emitDedupe(t *testing.T, s *store.Store, source, kind, dedupe string, op any) bool {
+	t.Helper()
+	payload, _ := json.Marshal(op)
+	_, inserted, err := s.InsertEvent(context.Background(), source, kind, dedupe, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return inserted
+}
+
+// Reachable stuck scenario: a TV episode goes available while the series
+// request is still active (other episodes pending), then that episode is
+// re-grabbed as an upgrade (cycle 2). With the old item-only availability
+// dedupe key, cycle-2 availability could never be re-emitted and the episode
+// stayed stuck below 'available'. The cycle-scoped key fixes it.
+func TestEpisodeAvailabilityRecoversAcrossUpgradeCycle(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	series := &SeriesRef{SonarrID: 9, TvdbID: 555, Title: "Show"}
+	// Season pack grab creates two episode items under one orphan request.
+	emit(t, s, "sonarr", "grab", GrabOp{Arr: "sonarr", DownloadID: "pack-a", Series: series, Episodes: []EpisodeRef{
+		{SonarrID: 1, Season: 1, Episode: 1, Title: "E1"},
+		{SonarrID: 2, Season: 1, Episode: 2, Title: "E2"},
+	}})
+	emit(t, s, "sonarr", "import", ImportOp{Arr: "sonarr", DownloadID: "pack-a", Series: series, Episodes: []EpisodeRef{
+		{SonarrID: 1, Season: 1, Episode: 1},
+	}})
+	p.drain(ctx)
+
+	list, _ := s.ListRequests(ctx, "active", "", 10, 0)
+	reqID := list[0].ID
+	items, _ := s.ListItemsForRequest(ctx, reqID)
+	var e1 *store.MediaItem
+	for i := range items {
+		if items[i].EpisodeNumber != nil && *items[i].EpisodeNumber == 1 {
+			e1 = &items[i]
+		}
+	}
+	if e1 == nil {
+		t.Fatal("E1 not found")
+	}
+
+	// E1 available in cycle 1; request stays active (E2 pending).
+	emitDedupe(t, s, "jellyfin", "available", "jellyfin:avail:"+itoa64(e1.ID)+":1", AvailableOp{MediaItemID: e1.ID, JellyfinItemID: "jf1"})
+	p.drain(ctx)
+	if req, _ := s.GetRequest(ctx, reqID); req.Status != "active" {
+		t.Fatalf("request should still be active (E2 pending), got %s", req.Status)
+	}
+
+	// Upgrade re-grab of E1 with a different download → cycle 2.
+	emit(t, s, "sonarr", "grab", GrabOp{Arr: "sonarr", DownloadID: "e1-b", Series: series, Episodes: []EpisodeRef{
+		{SonarrID: 1, Season: 1, Episode: 1},
+	}})
+	emit(t, s, "sonarr", "import", ImportOp{Arr: "sonarr", DownloadID: "e1-b", Series: series, Episodes: []EpisodeRef{
+		{SonarrID: 1, Season: 1, Episode: 1},
+	}})
+	p.drain(ctx)
+	if got, _ := s.GetMediaItem(ctx, e1.ID); got.CurrentCycle != 2 || got.CurrentStage != "imported" {
+		t.Fatalf("upgrade: want imported/2, got %s/%d", got.CurrentStage, got.CurrentCycle)
+	}
+
+	// Old cycle-1 key stays deduped; cycle-2 key is fresh → availability recovers.
+	if emitDedupe(t, s, "jellyfin", "available", "jellyfin:avail:"+itoa64(e1.ID)+":1", AvailableOp{MediaItemID: e1.ID}) {
+		t.Fatal("cycle-1 key should still dedupe")
+	}
+	if !emitDedupe(t, s, "jellyfin", "available", "jellyfin:avail:"+itoa64(e1.ID)+":2", AvailableOp{MediaItemID: e1.ID, JellyfinItemID: "jf2"}) {
+		t.Fatal("cycle-2 key should insert")
+	}
+	p.drain(ctx)
+	if got, _ := s.GetMediaItem(ctx, e1.ID); got.CurrentStage != "available" {
+		t.Fatalf("cycle 2: want available, got %s", got.CurrentStage)
+	}
+}
+
 func TestMovieLifecycle(t *testing.T) {
 	ctx := context.Background()
 	p, s := testProjector(t)
@@ -109,6 +186,50 @@ func TestMovieLifecycle(t *testing.T) {
 	req, _ = s.FindRequestBySeerrID(ctx, 7)
 	if req.Status != "completed" {
 		t.Fatalf("want completed, got %s", req.Status)
+	}
+}
+
+func TestArrarrSubstagesAndAvailable(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	movie := &MovieRef{RadarrID: 5, TmdbID: 693134, Title: "Dune"}
+	emit(t, s, "seerr", "approved", SeerrOp{
+		SeerrRequestID: 3, Kind: "approved", MediaType: "movie", TmdbID: 693134, Title: "Dune",
+	})
+	// Grab via arrarr nzo id (SAB path: downloadId == nzo_id).
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "arrarr_abc", Movie: movie})
+	p.drain(ctx)
+
+	// Arrarr TorBox substages, correlated by nzo_id.
+	for _, to := range []string{"SUBMITTED", "DOWNLOADING", "COMPLETED_TORBOX", "READY"} {
+		emit(t, s, "arrarr", "job.transition", JobTransitionOp{NzoID: "arrarr_abc", To: to})
+	}
+	p.drain(ctx)
+
+	req, _ := s.FindRequestBySeerrID(ctx, 3)
+	items, _ := s.ListItemsForRequest(ctx, req.ID)
+	if items[0].CurrentStage != "downloaded" {
+		t.Fatalf("want downloaded after READY, got %s", items[0].CurrentStage)
+	}
+	dl, _ := s.FindDownloadByClientID(ctx, "arrarr_abc")
+	if dl.State != "downloaded" || dl.ArrarrNzoID != "arrarr_abc" {
+		t.Fatalf("download not tracked: state=%s nzo=%s", dl.State, dl.ArrarrNzoID)
+	}
+
+	// Import from Radarr, then Jellyfin availability.
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "arrarr_abc", Movie: movie, MoviePath: "/m/dune.mkv"})
+	p.drain(ctx)
+	emit(t, s, "jellyfin", "available", AvailableOp{MediaItemID: items[0].ID, JellyfinItemID: "jf123"})
+	p.drain(ctx)
+
+	items, _ = s.ListItemsForRequest(ctx, req.ID)
+	if items[0].CurrentStage != "available" || items[0].JellyfinItemID != "jf123" {
+		t.Fatalf("want available+jellyfin id, got %s / %q", items[0].CurrentStage, items[0].JellyfinItemID)
+	}
+	req, _ = s.FindRequestBySeerrID(ctx, 3)
+	if req.Status != "completed" {
+		t.Fatalf("request should be completed, got %s", req.Status)
 	}
 }
 

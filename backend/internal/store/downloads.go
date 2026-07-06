@@ -109,6 +109,21 @@ func (s *Store) LinkDownloadItem(ctx context.Context, downloadID, mediaItemID in
 	return err
 }
 
+func (s *Store) SetDownloadArrarrNzo(ctx context.Context, id int64, nzoID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE downloads SET arrarr_nzo_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, nzoID, id)
+	return err
+}
+
+func (s *Store) FindDownloadByArrarrNzo(ctx context.Context, nzoID string) (*Download, error) {
+	d, err := scanDownload(s.db.QueryRowContext(ctx,
+		dlSelect+` WHERE arrarr_nzo_id = ? ORDER BY id DESC LIMIT 1`, nzoID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return d, err
+}
+
 func (s *Store) SetDownloadState(ctx context.Context, id int64, state, lastError string) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE downloads SET state = ?,

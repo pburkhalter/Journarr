@@ -21,6 +21,19 @@ func (s *Store) DownloadClientIDForItemCycle(ctx context.Context, itemID int64, 
 	return id, err
 }
 
+// CycleForItemDownloadByID reports which cycle a download (by id) is linked to
+// for an item (0 = not linked).
+func (s *Store) CycleForItemDownloadByID(ctx context.Context, itemID, downloadID int64) (int, error) {
+	var cycle int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT cycle FROM download_items WHERE media_item_id = ? AND download_id = ?`,
+		itemID, downloadID).Scan(&cycle)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return cycle, err
+}
+
 // UnimportedItemCount counts linked items that have no 'imported' transition
 // in the cycle this download belongs to — precise even when an item has
 // since moved on to a newer cycle with a different download.

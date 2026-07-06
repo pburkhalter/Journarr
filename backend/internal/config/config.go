@@ -22,10 +22,11 @@ type Config struct {
 	HealthInterval  time.Duration `env:"HEALTH_POLL_INTERVAL" envDefault:"45s"`
 	UpstreamTimeout time.Duration `env:"UPSTREAM_TIMEOUT" envDefault:"10s"`
 
-	SeerrPollInterval   time.Duration `env:"SEERR_POLL_INTERVAL" envDefault:"5m"`
-	HistoryPollInterval time.Duration `env:"ARR_HISTORY_POLL_INTERVAL" envDefault:"2m"`
-	QueuePollInterval   time.Duration `env:"ARR_QUEUE_POLL_INTERVAL" envDefault:"60s"`
-	EventsRetentionDays int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
+	SeerrPollInterval    time.Duration `env:"SEERR_POLL_INTERVAL" envDefault:"5m"`
+	HistoryPollInterval  time.Duration `env:"ARR_HISTORY_POLL_INTERVAL" envDefault:"2m"`
+	QueuePollInterval    time.Duration `env:"ARR_QUEUE_POLL_INTERVAL" envDefault:"60s"`
+	JellyfinPollInterval time.Duration `env:"JELLYFIN_POLL_INTERVAL" envDefault:"2m"`
+	EventsRetentionDays  int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
 
 	// Services with an empty URL are simply not monitored/ingested.
 	SeerrURL    string `env:"SEERR_URL"`
@@ -45,6 +46,7 @@ type Config struct {
 
 	JellyfinURL    string `env:"JELLYFIN_URL"`
 	JellyfinAPIKey string `env:"JELLYFIN_API_KEY"`
+	JellyfinUserID string `env:"JELLYFIN_USER_ID"` // optional; unset uses the api-key-only /Items form
 
 	WahaURL    string `env:"WAHA_URL"`
 	WahaAPIKey string `env:"WAHA_API_KEY"`

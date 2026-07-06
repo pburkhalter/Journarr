@@ -148,6 +148,33 @@ func (s *Store) FindMovieItemByRequest(ctx context.Context, requestID int64) (*M
 	return m, err
 }
 
+// FindMovieItemByTmdb finds the newest movie item for a tmdb id (any request).
+func (s *Store) FindMovieItemByTmdb(ctx context.Context, tmdbID int64) (*MediaItem, error) {
+	m, err := scanItem(s.db.QueryRowContext(ctx,
+		itemSelect+` WHERE media_type = 'movie' AND tmdb_id = ? ORDER BY id DESC LIMIT 1`, tmdbID))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return m, err
+}
+
+// FindEpisodeItemByTvdb finds an episode item by series tvdb id + numbers.
+func (s *Store) FindEpisodeItemByTvdb(ctx context.Context, tvdbID, season, episode int64) (*MediaItem, error) {
+	m, err := scanItem(s.db.QueryRowContext(ctx,
+		itemSelect+` WHERE media_type = 'episode' AND tvdb_id = ? AND season_number = ? AND episode_number = ?
+		ORDER BY id DESC LIMIT 1`, tvdbID, season, episode))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return m, err
+}
+
+func (s *Store) SetItemJellyfinID(ctx context.Context, id int64, jellyfinID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE media_items SET jellyfin_item_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, jellyfinID, id)
+	return err
+}
+
 func (s *Store) ListItemsForRequest(ctx context.Context, requestID int64) ([]MediaItem, error) {
 	rows, err := s.db.QueryContext(ctx,
 		itemSelect+` WHERE request_id = ? ORDER BY season_number, episode_number, id`, requestID)

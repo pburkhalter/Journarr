@@ -54,6 +54,7 @@ func buildStack(cfg *config.Config) *stack {
 	}
 	if cfg.JellyfinURL != "" {
 		s.Jellyfin = clients.NewJellyfin(cfg.JellyfinURL, cfg.JellyfinAPIKey, t)
+		s.Jellyfin.UserID = cfg.JellyfinUserID
 	}
 	if cfg.WahaURL != "" {
 		s.Waha = clients.NewWaha(cfg.WahaURL, cfg.WahaAPIKey, t)
@@ -153,6 +154,12 @@ func run() error {
 		go (&poll.ArrQueuePoller{
 			Store: st, Log: log, Arrs: queueArrs,
 			Interval: cfg.QueuePollInterval, Publish: broker.Publish,
+		}).Run(ctx)
+	}
+	if stk.Jellyfin != nil {
+		go (&poll.JellyfinPoller{
+			Store: st, Log: log, Jelly: stk.Jellyfin,
+			Interval: cfg.JellyfinPollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
 

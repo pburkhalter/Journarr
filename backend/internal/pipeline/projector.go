@@ -154,6 +154,20 @@ func (p *Projector) handle(ctx context.Context, ev store.Event) (match string, r
 		}
 		return p.applyFailure(ctx, ev.ID, op)
 
+	case ev.Kind == "job.transition":
+		var op JobTransitionOp
+		if err := json.Unmarshal(ev.Payload, &op); err != nil {
+			return "ignored", 0, 0, 0
+		}
+		return p.applyJobTransition(ctx, ev.ID, op)
+
+	case ev.Kind == "available":
+		var op AvailableOp
+		if err := json.Unmarshal(ev.Payload, &op); err != nil {
+			return "ignored", 0, 0, 0
+		}
+		return p.applyAvailable(ctx, ev.ID, op)
+
 	default:
 		p.Log.Debug("projector: unhandled event", "source", ev.Source, "kind", ev.Kind)
 		return "ignored", 0, 0, 0

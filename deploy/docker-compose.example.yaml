@@ -35,6 +35,9 @@ services:
       ARRARR_API_KEY: ${ARRARR_API_KEY}
       JELLYFIN_URL: http://192.168.0.203:8096
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY}
+      # JELLYFIN_USER_ID is optional — only set it if your Jellyfin requires a
+      # user context for /Items (an API key alone is normally sufficient).
+      # JELLYFIN_USER_ID: ${JELLYFIN_USER_ID}
       WAHA_URL: http://192.168.0.203:3088
       WAHA_API_KEY: ${WAHA_API_KEY}
     volumes:
