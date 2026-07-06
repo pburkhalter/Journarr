@@ -26,13 +26,14 @@ import (
 
 // stack bundles the upstream API clients (nil = not configured).
 type stack struct {
-	Seerr    *clients.Seerr
-	Sonarr   *clients.Arr
-	Radarr   *clients.Arr
-	Prowlarr *clients.Arr
-	Arrarr   *clients.Arrarr
-	Jellyfin *clients.Jellyfin
-	Waha     *clients.Waha
+	Seerr     *clients.Seerr
+	Sonarr    *clients.Arr
+	Radarr    *clients.Arr
+	Prowlarr  *clients.Arr
+	Arrarr    *clients.Arrarr
+	Jellyfin  *clients.Jellyfin
+	Waha      *clients.Waha
+	Concierge *clients.Concierge
 }
 
 func buildStack(cfg *config.Config) *stack {
@@ -59,6 +60,9 @@ func buildStack(cfg *config.Config) *stack {
 	}
 	if cfg.WahaURL != "" {
 		s.Waha = clients.NewWaha(cfg.WahaURL, cfg.WahaAPIKey, t)
+	}
+	if cfg.ConciergeURL != "" {
+		s.Concierge = clients.NewConcierge(cfg.ConciergeURL, t)
 	}
 	return s
 }
@@ -295,6 +299,9 @@ func buildChecks(s *stack) []poll.Check {
 	}
 	if s.Waha != nil {
 		checks = append(checks, poll.Check{Service: "waha", Fn: s.Waha.CheckHealth})
+	}
+	if s.Concierge != nil {
+		checks = append(checks, poll.Check{Service: "concierge", Fn: s.Concierge.CheckHealth})
 	}
 	return checks
 }

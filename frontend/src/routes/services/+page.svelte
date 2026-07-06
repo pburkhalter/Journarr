@@ -21,7 +21,7 @@
 	}
 
 	// Stable display order: pipeline order, not alphabetical.
-	const order = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha'];
+	const order = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'concierge'];
 
 	const sorted = $derived(
 		Object.values(live.services).sort((a, b) => {

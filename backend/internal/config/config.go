@@ -53,6 +53,8 @@ type Config struct {
 	WahaURL    string `env:"WAHA_URL"`
 	WahaAPIKey string `env:"WAHA_API_KEY"`
 
+	ConciergeURL string `env:"CONCIERGE_URL"`
+
 	// SSO via OIDC (Pocket ID, Authentik, …). Setting OIDC_ISSUER_URL turns
 	// it on; without it Journarr is open (LAN mode).
 	PublicURL         string        `env:"JOURNARR_PUBLIC_URL"`

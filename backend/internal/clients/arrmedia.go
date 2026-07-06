@@ -106,13 +106,48 @@ type QueueRecord struct {
 }
 
 func (c *Arr) Queue(ctx context.Context) ([]QueueRecord, error) {
-	var out struct {
-		Records []QueueRecord `json:"records"`
+	// Paginate: a large backfill queue easily exceeds one page, and an action
+	// that misses a record would cancel a download whose client job keeps
+	// running. Bounded at 20 pages (10k records) as a safety stop.
+	var all []QueueRecord
+	for page := 1; page <= 20; page++ {
+		var out struct {
+			Records      []QueueRecord `json:"records"`
+			TotalRecords int           `json:"totalRecords"`
+		}
+		u := fmt.Sprintf("%s%s/queue?page=%d&pageSize=500&includeUnknownSeriesItems=true&includeUnknownMovieItems=true",
+			c.BaseURL, c.APIBase, page)
+		if _, err := getJSON(ctx, c.HTTP, u, c.headers(), &out); err != nil {
+			return all, err
+		}
+		all = append(all, out.Records...)
+		if len(out.Records) < 500 || len(all) >= out.TotalRecords {
+			break
+		}
 	}
-	_, err := getJSON(ctx, c.HTTP,
-		c.BaseURL+c.APIBase+"/queue?page=1&pageSize=200&includeUnknownSeriesItems=true&includeUnknownMovieItems=true",
-		c.headers(), &out)
-	return out.Records, err
+	return all, nil
+}
+
+// SetMovieMonitored flips a Radarr movie's monitored flag (used by Cancel to
+// stop the arr re-downloading after we remove the queue item).
+func (c *Arr) SetMovieMonitored(ctx context.Context, movieID int64, monitored bool) error {
+	var movie map[string]any
+	if _, err := getJSON(ctx, c.HTTP,
+		fmt.Sprintf("%s%s/movie/%d", c.BaseURL, c.APIBase, movieID), c.headers(), &movie); err != nil {
+		return err
+	}
+	movie["monitored"] = monitored
+	return c.doJSON(ctx, http.MethodPut,
+		fmt.Sprintf("%s%s/movie/%d", c.BaseURL, c.APIBase, movieID), movie)
+}
+
+// SetEpisodesMonitored flips the monitored flag on Sonarr episodes in bulk.
+func (c *Arr) SetEpisodesMonitored(ctx context.Context, episodeIDs []int64, monitored bool) error {
+	if len(episodeIDs) == 0 {
+		return nil
+	}
+	return c.doJSON(ctx, http.MethodPut, c.BaseURL+c.APIBase+"/episode/monitor",
+		map[string]any{"episodeIds": episodeIDs, "monitored": monitored})
 }
 
 // HistoryRecord is the tolerant union of Sonarr and Radarr history rows.

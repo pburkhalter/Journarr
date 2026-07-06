@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -139,7 +141,9 @@ func NewRouter(d Deps) http.Handler {
 			})
 
 			r.Post("/actions/jellyfin-scan", func(w http.ResponseWriter, req *http.Request) {
-				if err := d.Actions.JellyfinScan(req.Context()); err != nil {
+				actx, cancel := detach()
+				defer cancel()
+				if err := d.Actions.JellyfinScan(actx); err != nil {
 					httpError(w, d.Log, "jellyfin scan", err)
 					return
 				}
@@ -153,7 +157,9 @@ func NewRouter(d Deps) http.Handler {
 					http.Error(w, "media_item_id required", http.StatusBadRequest)
 					return
 				}
-				if err := d.Actions.Retry(req.Context(), body.MediaItemID); err != nil {
+				actx, cancel := detach()
+				defer cancel()
+				if err := d.Actions.Retry(actx, body.MediaItemID); err != nil {
 					httpError(w, d.Log, "retry", err)
 					return
 				}
@@ -167,7 +173,9 @@ func NewRouter(d Deps) http.Handler {
 					http.Error(w, "request_id required", http.StatusBadRequest)
 					return
 				}
-				if err := d.Actions.Cancel(req.Context(), body.RequestID); err != nil {
+				actx, cancel := detach()
+				defer cancel()
+				if err := d.Actions.Cancel(actx, body.RequestID); err != nil {
 					httpError(w, d.Log, "cancel", err)
 					return
 				}
@@ -207,6 +215,13 @@ func NewRouter(d Deps) http.Handler {
 
 	r.NotFound(d.Auth.RequireBrowser(spaHandler(d.Dist)))
 	return r
+}
+
+// detach returns a context independent of the HTTP request so a destructive
+// action (retry/cancel) runs to completion even if the client disconnects
+// mid-request, avoiding partial state. Bounded so it can't run forever.
+func detach() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 90*time.Second)
 }
 
 // clampInt parses s with a default, bounded to [min, max].

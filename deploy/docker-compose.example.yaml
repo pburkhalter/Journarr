@@ -40,5 +40,7 @@ services:
       # JELLYFIN_USER_ID: ${JELLYFIN_USER_ID}
       WAHA_URL: http://192.168.0.203:3088
       WAHA_API_KEY: ${WAHA_API_KEY}
+      # waha-concierge — monitored via its /streaming-status.json aggregator.
+      CONCIERGE_URL: http://192.168.0.203:8286
     volumes:
       - /mnt/Fast/apps/journarr:/data

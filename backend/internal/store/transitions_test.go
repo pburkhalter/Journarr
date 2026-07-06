@@ -150,6 +150,62 @@ func TestListUnavailableActiveItems(t *testing.T) {
 	}
 }
 
+func TestStuckActiveFilterAndClear(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+
+	// Active request, one item stuck at 'grabbed' with no linked download and
+	// an old updated_at → should get flagged.
+	reqID, _ := s.InsertOrphanRequest(ctx, "movie", "Film", nil, nil)
+	mid := int64(9)
+	it, _ := s.EnsureMediaItem(ctx, MediaItem{RequestID: &reqID, MediaType: "movie", RadarrMovieID: &mid})
+	_, _ = s.ApplyStage(ctx, it, 1, "grabbed", 0, "")
+	// backdate updated_at so it's beyond any threshold
+	_, _ = s.db.ExecContext(ctx, `UPDATE media_items SET updated_at = datetime('now','-10 hours') WHERE id = ?`, it)
+
+	n, err := s.MarkStuck(ctx, map[string]int{"grabbed": 3600})
+	if err != nil || n != 1 {
+		t.Fatalf("want 1 flagged, got %d err=%v", n, err)
+	}
+	if c, _ := s.CountStuck(ctx); c != 1 {
+		t.Fatalf("CountStuck want 1, got %d", c)
+	}
+
+	// Canceling the request must clear the flag and drop it from the count.
+	_ = s.SetRequestStatus(ctx, reqID, "canceled")
+	if c, _ := s.CountStuck(ctx); c != 0 {
+		t.Fatalf("canceled request must not count as stuck, got %d", c)
+	}
+	if err := s.ClearStuckForRequest(ctx, reqID); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.GetMediaItem(ctx, it)
+	if m.StuckSince != nil {
+		t.Fatal("stuck_since not cleared")
+	}
+}
+
+func TestStuckSkipsActivelyProgressingDownload(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+
+	reqID, _ := s.InsertOrphanRequest(ctx, "movie", "Big", nil, nil)
+	mid := int64(3)
+	it, _ := s.EnsureMediaItem(ctx, MediaItem{RequestID: &reqID, MediaType: "movie", RadarrMovieID: &mid})
+	_, _ = s.ApplyStage(ctx, it, 1, "cloud_downloading", 0, "")
+	_, _ = s.db.ExecContext(ctx, `UPDATE media_items SET updated_at = datetime('now','-10 hours') WHERE id = ?`, it)
+
+	// A linked download that updated recently (progress) must suppress the flag.
+	dlID, _ := s.UpsertDownload(ctx, Download{ClientDownloadID: "x", Arr: "radarr"})
+	_ = s.LinkDownloadItem(ctx, dlID, it, 1)
+	_ = s.UpdateDownloadProgress(ctx, dlID, 50, 100) // sets downloads.updated_at = now
+
+	n, _ := s.MarkStuck(ctx, map[string]int{"cloud_downloading": 3600})
+	if n != 0 {
+		t.Fatalf("actively-progressing download must not be flagged stuck, got %d", n)
+	}
+}
+
 func TestDownloadUpsertAndInfohashReuse(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)

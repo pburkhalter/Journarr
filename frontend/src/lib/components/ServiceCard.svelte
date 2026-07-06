@@ -15,6 +15,13 @@
 	const healthMessages = $derived((detail['health_messages'] as string[] | undefined) ?? null);
 	const errorMsg = $derived((detail['error'] as string | undefined) ?? null);
 	const serverName = $derived((detail['server_name'] as string | undefined) ?? null);
+	// concierge extras
+	const issues = $derived((detail['issues'] as string[] | undefined) ?? null);
+	const grabQuota = $derived(
+		(detail['grab_quota'] as { indexer: string; used: number; cap: number; left: number } | undefined) ?? null
+	);
+	const stuckJobs = $derived(detail['stuck_jobs'] as number | undefined);
+	const unflushed = $derived(detail['unflushed'] as number | undefined);
 
 	const badge: Record<string, string> = {
 		up: 'bg-success/15 text-success',
@@ -59,6 +66,44 @@
 				<li class="rounded-md bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">{msg}</li>
 			{/each}
 		</ul>
+	{/if}
+
+	{#if issues && issues.length > 0}
+		<ul class="mt-3 space-y-1">
+			{#each issues as msg (msg)}
+				<li class="rounded-md bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">{msg}</li>
+			{/each}
+		</ul>
+	{/if}
+
+	{#if grabQuota}
+		<div class="mt-3">
+			<div class="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+				<span>{grabQuota.indexer} grabs today</span>
+				<span class="tabular-nums">{grabQuota.used}/{grabQuota.cap}</span>
+			</div>
+			<div class="h-1.5 overflow-hidden rounded-full bg-muted">
+				<div
+					class={cn('h-full rounded-full', grabQuota.left > grabQuota.cap * 0.15 ? 'bg-success' : 'bg-warning')}
+					style="width: {Math.min(100, (grabQuota.used / grabQuota.cap) * 100)}%"
+				></div>
+			</div>
+		</div>
+	{/if}
+
+	{#if stuckJobs !== undefined || unflushed !== undefined}
+		<div class="mt-3 flex flex-wrap gap-1.5">
+			{#if stuckJobs !== undefined}
+				<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+					stuck jobs <span class="font-medium text-foreground tabular-nums">{stuckJobs}</span>
+				</span>
+			{/if}
+			{#if unflushed !== undefined}
+				<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+					unflushed <span class="font-medium text-foreground tabular-nums">{unflushed}</span>
+				</span>
+			{/if}
+		</div>
 	{/if}
 
 	{#if jobStates && Object.keys(jobStates).length > 0}
