@@ -30,6 +30,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/webhook/sonarr", h.wrap(h.handleSonarr))
 	r.Post("/webhook/radarr", h.wrap(h.handleRadarr))
 	r.Post("/webhook/arrarr", h.wrap(h.handleArrarr))
+	r.Post("/webhook/concierge", h.wrap(h.handleConcierge))
 }
 
 func (h *Handler) wrap(fn func(body []byte) error) http.HandlerFunc {

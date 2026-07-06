@@ -92,6 +92,22 @@ type AvailableOp struct {
 	JellyfinItemID string `json:"jellyfin_item_id,omitempty"`
 }
 
+// EpisodeNum identifies an episode within a series notification.
+type EpisodeNum struct {
+	Season  int64 `json:"season"`
+	Episode int64 `json:"episode"`
+}
+
+// NotifiedOp: waha-concierge sent a WhatsApp notification. Concierge carries
+// the series/movie TMDB id; episodes are matched via the request's tmdb_id
+// (media items are keyed by tvdb, but requests hold both).
+type NotifiedOp struct {
+	MediaType string       `json:"media_type"` // movie|tv
+	TmdbID    int64        `json:"tmdb_id"`
+	Title     string       `json:"title,omitempty"`
+	Episodes  []EpisodeNum `json:"episodes,omitempty"`
+}
+
 // SeerrOp: request lifecycle signal, from webhook or the request poller.
 type SeerrOp struct {
 	SeerrRequestID int64   `json:"seerr_request_id"`

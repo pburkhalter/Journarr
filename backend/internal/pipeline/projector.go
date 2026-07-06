@@ -168,6 +168,13 @@ func (p *Projector) handle(ctx context.Context, ev store.Event) (match string, r
 		}
 		return p.applyAvailable(ctx, ev.ID, op)
 
+	case ev.Kind == "notified":
+		var op NotifiedOp
+		if err := json.Unmarshal(ev.Payload, &op); err != nil {
+			return "ignored", 0, 0, 0
+		}
+		return p.applyNotified(ctx, ev.ID, op)
+
 	default:
 		p.Log.Debug("projector: unhandled event", "source", ev.Source, "kind", ev.Kind)
 		return "ignored", 0, 0, 0

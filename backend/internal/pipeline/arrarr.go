@@ -151,6 +151,50 @@ func (p *Projector) applyAvailable(ctx context.Context, eventID int64, op Availa
 	return "matched", reqID, item.ID, 0
 }
 
+// applyNotified marks the item(s) the concierge just messaged about as
+// 'notified'. Concierge notifies at import time, so this often precedes the
+// Jellyfin 'available' event — the forward-only stage logic handles that, and
+// 'notified' (the last stage) also serves as a completion safety net when
+// Jellyfin matching never lands.
+func (p *Projector) applyNotified(ctx context.Context, eventID int64, op NotifiedOp) (string, int64, int64, int64) {
+	if op.TmdbID == 0 {
+		return "ignored", 0, 0, 0
+	}
+	if op.MediaType == "movie" {
+		mi, err := p.Store.FindMovieItemByTmdb(ctx, op.TmdbID)
+		if err != nil || mi == nil {
+			return "orphan", 0, 0, 0
+		}
+		var reqID int64
+		if mi.RequestID != nil {
+			reqID = *mi.RequestID
+		}
+		p.apply(ctx, mi.ID, reqID, eventID, "notified", "waha")
+		return "matched", reqID, mi.ID, 0
+	}
+
+	// tv: bridge series tmdb -> request -> episodes by season/episode.
+	req, err := p.Store.FindRequestByTmdb(ctx, op.TmdbID, "tv")
+	if err != nil || req == nil {
+		return "orphan", 0, 0, 0
+	}
+	var first int64
+	for _, e := range op.Episodes {
+		mi, err := p.Store.FindItemByEpisodeNumbers(ctx, req.ID, e.Season, e.Episode)
+		if err != nil || mi == nil {
+			continue
+		}
+		p.apply(ctx, mi.ID, req.ID, eventID, "notified", "waha")
+		if first == 0 {
+			first = mi.ID
+		}
+	}
+	if first == 0 {
+		return "orphan", req.ID, 0, 0
+	}
+	return "matched", req.ID, first, 0
+}
+
 func (p *Projector) annotateDownloadItems(ctx context.Context, downloadID int64, msg string) (int64, int64) {
 	if msg == "" {
 		msg = "arrarr: job failed"

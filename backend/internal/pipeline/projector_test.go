@@ -233,6 +233,56 @@ func TestArrarrSubstagesAndAvailable(t *testing.T) {
 	}
 }
 
+func TestNotifiedStage(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	// Movie: notified matched by tmdb, even after the request completed.
+	movie := &MovieRef{RadarrID: 1, TmdbID: 693134, Title: "Dune"}
+	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 1, Kind: "approved", MediaType: "movie", TmdbID: 693134, Title: "Dune"})
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "d1", Movie: movie})
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "d1", Movie: movie, MoviePath: "/d.mkv"})
+	emit(t, s, "concierge", "notified", NotifiedOp{MediaType: "movie", TmdbID: 693134, Title: "Dune"})
+	p.drain(ctx)
+	req, _ := s.FindRequestBySeerrID(ctx, 1)
+	items, _ := s.ListItemsForRequest(ctx, req.ID)
+	if items[0].CurrentStage != "notified" {
+		t.Fatalf("movie: want notified, got %s", items[0].CurrentStage)
+	}
+	if req.Status != "completed" {
+		t.Fatalf("movie: notified should complete the request, got %s", req.Status)
+	}
+
+	// TV: notification carries the series TMDB id; episodes matched via the
+	// request's tmdb_id (items are keyed by tvdb).
+	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 2, Kind: "approved", MediaType: "tv", TmdbID: 95396, TvdbID: 371980, Title: "Sev"})
+	// no fanout (no sonarr client in test) — episodes appear at grab time
+	emit(t, s, "sonarr", "grab", GrabOp{Arr: "sonarr", DownloadID: "s1",
+		Series:   &SeriesRef{SonarrID: 1, TvdbID: 371980, TmdbID: 95396, Title: "Sev"},
+		Episodes: []EpisodeRef{{SonarrID: 10, Season: 1, Episode: 1}, {SonarrID: 11, Season: 1, Episode: 2}}})
+	p.drain(ctx)
+	// The grab attaches to the active seerr tv request (matched by tvdb).
+	emit(t, s, "concierge", "notified", NotifiedOp{MediaType: "tv", TmdbID: 95396, Title: "Sev",
+		Episodes: []EpisodeNum{{Season: 1, Episode: 1}}})
+	p.drain(ctx)
+	req2, _ := s.FindRequestBySeerrID(ctx, 2)
+	items2, _ := s.ListItemsForRequest(ctx, req2.ID)
+	var e1, e2 *store.MediaItem
+	for i := range items2 {
+		if *items2[i].EpisodeNumber == 1 {
+			e1 = &items2[i]
+		} else {
+			e2 = &items2[i]
+		}
+	}
+	if e1 == nil || e1.CurrentStage != "notified" {
+		t.Fatalf("tv E1: want notified, got %v", e1)
+	}
+	if e2 == nil || e2.CurrentStage == "notified" {
+		t.Fatalf("tv E2: should NOT be notified (not in the batch), got %v", e2 != nil && e2.CurrentStage == "notified")
+	}
+}
+
 func TestRegrabStartsNewCycle(t *testing.T) {
 	ctx := context.Background()
 	p, s := testProjector(t)

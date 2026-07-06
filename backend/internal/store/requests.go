@@ -92,6 +92,13 @@ func (s *Store) FindActiveRequestByTmdb(ctx context.Context, tmdbID int64, media
 		reqSelect+` WHERE tmdb_id = ? AND media_type = ? AND status = 'active' ORDER BY id DESC LIMIT 1`, tmdbID, mediaType))
 }
 
+// FindRequestByTmdb finds the newest request for a tmdb id regardless of
+// status (a notification can arrive after the request already completed).
+func (s *Store) FindRequestByTmdb(ctx context.Context, tmdbID int64, mediaType string) (*Request, error) {
+	return s.scanRequest(s.db.QueryRowContext(ctx,
+		reqSelect+` WHERE tmdb_id = ? AND media_type = ? ORDER BY id DESC LIMIT 1`, tmdbID, mediaType))
+}
+
 func (s *Store) GetRequest(ctx context.Context, id int64) (*Request, error) {
 	return s.scanRequest(s.db.QueryRowContext(ctx, reqSelect+` WHERE id = ?`, id))
 }
