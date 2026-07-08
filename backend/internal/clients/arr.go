@@ -56,6 +56,13 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 	}
 	warnings := []string{}
 	for _, e := range entries {
+		// "New update is available" is informational, not a health problem —
+		// the update checker surfaces updates as a separate badge, so don't
+		// let a pending update turn the card yellow.
+		if strings.EqualFold(e.Source, "UpdateCheck") ||
+			strings.Contains(strings.ToLower(e.Message), "update is available") {
+			continue
+		}
 		if e.Type == "warning" || e.Type == "error" {
 			warnings = append(warnings, e.Message)
 			if e.Type == "error" {
