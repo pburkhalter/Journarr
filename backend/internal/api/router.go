@@ -16,6 +16,7 @@ import (
 
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/auth"
+	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/registry"
 	"github.com/pburkhalter/journarr/internal/store"
@@ -29,10 +30,19 @@ type Deps struct {
 	Ingest   *ingest.Handler // nil = no webhook ingestion
 	Actions  *actions.Actions
 	Registry *registry.Registry
+	Flow     *flow.Controller // nil = control-plane disabled
 	Updates  *updates.Checker // nil = no update checks
 	Log      *slog.Logger
 	Version  string
 	Dist     fs.FS // built frontend; may be empty pre-build
+}
+
+// flowKeys whitelists the settings a client may write via PUT /api/flow.
+var flowKeys = map[string]bool{
+	"jellyfin_scan_on_import":     true,
+	"auto_retry_stuck_after_secs": true,
+	"notify_on_complete":          true,
+	"notify_stage":                true,
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -121,6 +131,42 @@ func NewRouter(d Deps) http.Handler {
 					out = append(out, s)
 				}
 				writeJSON(w, map[string]any{"stages": out})
+			})
+			// Control-plane settings (Flow menu).
+			r.Get("/flow", func(w http.ResponseWriter, req *http.Request) {
+				m, err := d.Store.GetFlowSettings(req.Context())
+				if err != nil {
+					httpError(w, d.Log, "get flow settings", err)
+					return
+				}
+				if m == nil {
+					m = map[string]string{}
+				}
+				writeJSON(w, map[string]any{"settings": m})
+			})
+			r.Put("/flow", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					Settings map[string]string `json:"settings"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+					http.Error(w, "bad body", http.StatusBadRequest)
+					return
+				}
+				for k, v := range body.Settings {
+					if !flowKeys[k] {
+						http.Error(w, "unknown setting: "+k, http.StatusBadRequest)
+						return
+					}
+					if err := d.Store.SetFlowSetting(req.Context(), k, v); err != nil {
+						httpError(w, d.Log, "set flow setting", err)
+						return
+					}
+				}
+				if d.Flow != nil {
+					_ = d.Flow.Reload(req.Context())
+				}
+				m, _ := d.Store.GetFlowSettings(req.Context())
+				writeJSON(w, map[string]any{"settings": m})
 			})
 			r.Get("/stats", func(w http.ResponseWriter, req *http.Request) {
 				st, err := d.Store.FetchStats(req.Context())

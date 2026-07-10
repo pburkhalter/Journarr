@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { executeAction, getActions } from '$lib/api';
+	import { executeAction, getActions, getFlowSettings, putFlowSettings } from '$lib/api';
 	import { confirm } from '$lib/confirm.svelte';
 	import type { Action } from '$lib/types';
 	import { cn } from '$lib/utils';
@@ -9,11 +9,39 @@
 	let busy = $state<Record<string, boolean>>({});
 	let result = $state<Record<string, string>>({});
 
+	// Control-plane (Flow) settings.
+	let flow = $state<Record<string, string>>({});
+	let flowSaving = $state(false);
+	const flowOn = (k: string) => flow[k] === 'true' || flow[k] === '1' || flow[k] === 'on';
+	const retryMin = $derived(Math.round((Number(flow['auto_retry_stuck_after_secs']) || 0) / 60));
+
+	async function saveFlow(patch: Record<string, string>) {
+		flow = { ...flow, ...patch };
+		flowSaving = true;
+		try {
+			flow = await putFlowSettings(patch);
+		} catch {
+			// reload authoritative state on failure
+			try {
+				flow = await getFlowSettings();
+			} catch {
+				/* keep optimistic */
+			}
+		} finally {
+			flowSaving = false;
+		}
+	}
+
 	async function load() {
 		try {
 			actions = await getActions('global');
 		} catch {
 			actions = [];
+		}
+		try {
+			flow = await getFlowSettings();
+		} catch {
+			flow = {};
 		}
 		loaded = true;
 	}
@@ -115,6 +143,49 @@
 			{#each libraryActions as a (a.id)}
 				{@render actionCard(a, 'Trigger a full library refresh')}
 			{/each}
+		</div>
+	</section>
+{/if}
+
+{#if loaded}
+	<section class="mb-6">
+		<h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+			Automation {#if flowSaving}<span class="text-[10px] normal-case text-muted-foreground/60">saving…</span>{/if}
+		</h2>
+		<p class="mb-3 max-w-2xl text-xs text-muted-foreground">
+			Interventions Journarr performs on its own. Off by default — the download pipeline runs
+			the same either way.
+		</p>
+		<div class="space-y-3">
+			<label class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+				<span class="min-w-0">
+					<span class="block text-sm font-medium">Jellyfin scan on import</span>
+					<span class="text-[11px] text-muted-foreground">Trigger a library refresh after new files import (coalesced).</span>
+				</span>
+				<input
+					type="checkbox"
+					class="size-4 shrink-0 accent-primary"
+					checked={flowOn('jellyfin_scan_on_import')}
+					onchange={(e) => saveFlow({ jellyfin_scan_on_import: e.currentTarget.checked ? 'true' : 'false' })}
+				/>
+			</label>
+			<div class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+				<span class="min-w-0">
+					<span class="block text-sm font-medium">Auto-retry stuck items</span>
+					<span class="text-[11px] text-muted-foreground">Re-search items with no progress for this long. 0 = off.</span>
+				</span>
+				<span class="flex shrink-0 items-center gap-1.5">
+					<input
+						type="number"
+						min="0"
+						value={retryMin}
+						onchange={(e) =>
+							saveFlow({ auto_retry_stuck_after_secs: String(Math.max(0, Number(e.currentTarget.value) || 0) * 60) })}
+						class="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
+					/>
+					<span class="text-[11px] text-muted-foreground">min</span>
+				</span>
+			</div>
 		</div>
 	</section>
 {/if}

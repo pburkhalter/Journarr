@@ -15,6 +15,9 @@ type Projector struct {
 	Store   *store.Store
 	Log     *slog.Logger
 	Publish func(event string, data any)
+	// OnStage fires after every applied stage transition (control-plane hook);
+	// set by main. Must be cheap and non-blocking — it runs on this goroutine.
+	OnStage func(itemID, reqID int64, stage string, cycle int)
 	Sonarr  *clients.Arr // nil when not configured
 	Radarr  *clients.Arr
 
@@ -193,5 +196,8 @@ func (p *Projector) publishStage(itemID, requestID int64, stage string, cycle in
 		p.Publish("media.stage", map[string]any{
 			"media_item_id": itemID, "request_id": requestID, "stage": stage, "cycle": cycle,
 		})
+	}
+	if p.OnStage != nil {
+		p.OnStage(itemID, requestID, stage, cycle)
 	}
 }

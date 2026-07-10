@@ -86,3 +86,23 @@ export async function getActions(scope = 'global', targetId?: number): Promise<A
 
 export const executeAction = (kind: string, params: Record<string, unknown>) =>
 	post('/api/actions/execute', { kind, params });
+
+export async function getFlowSettings(): Promise<Record<string, string>> {
+	const body = await get<{ settings: Record<string, string> }>('/api/flow');
+	return body.settings ?? {};
+}
+
+export async function putFlowSettings(settings: Record<string, string>): Promise<Record<string, string>> {
+	const res = await fetch('/api/flow', {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ settings })
+	});
+	if (res.status === 401) {
+		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
+		throw new Error('unauthenticated');
+	}
+	if (!res.ok) throw new Error(`/api/flow: ${res.status}`);
+	const body = (await res.json()) as { settings?: Record<string, string> };
+	return body.settings ?? {};
+}

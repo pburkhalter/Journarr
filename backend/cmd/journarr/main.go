@@ -15,6 +15,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/api"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/config"
+	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/logger"
 	"github.com/pburkhalter/journarr/internal/pipeline"
@@ -100,9 +101,11 @@ func run() error {
 		log.Info("health poller started", "services", len(checks), "interval", cfg.HealthInterval.String())
 	}
 
-	// Pipeline: projector + ingestion + reconciling pollers.
+	// Pipeline: projector + ingestion + reconciling pollers. projector.Run is
+	// started later, once the control-plane OnStage hook is wired (avoids a
+	// data race on the field). Pollers/ingest may Wake it before then — the
+	// buffered wake channel holds the signal until Run starts.
 	projector := pipeline.New(st, log, broker.Publish, sonarr, radarr)
-	go projector.Run(ctx)
 
 	var ing *ingest.Handler
 	if cfg.WebhookToken != "" {
@@ -185,6 +188,18 @@ func run() error {
 		Wake: projector.Wake, Publish: broker.Publish,
 	}
 
+	// Control-plane: owns the opt-in interventions (flow_settings). It observes
+	// stage transitions via projector.OnStage and drains durable flow_tasks with
+	// retry/backoff. All settings default off, so behavior is unchanged until a
+	// user enables one in the Flow menu.
+	flowCtrl := flow.New(st, log, acts, cfg.StuckPollInterval)
+	if err := flowCtrl.Reload(ctx); err != nil {
+		log.Warn("flow: initial settings load failed", "err", err)
+	}
+	projector.OnStage = flowCtrl.OnStageApplied
+	go projector.Run(ctx)
+	go flowCtrl.Run(ctx)
+
 	// GitHub update checker for the self-hosted custom stack. Only services
 	// that expose a semver build on their health surface can be compared;
 	// arrarr does (via /status.json version). concierge/journarr can be added
@@ -234,6 +249,7 @@ func run() error {
 		Ingest:   ing,
 		Actions:  acts,
 		Registry: reg,
+		Flow:     flowCtrl,
 		Updates:  updateChecker,
 		Log:      log,
 		Version:  versionStr,
