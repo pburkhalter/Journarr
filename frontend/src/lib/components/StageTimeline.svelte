@@ -87,9 +87,7 @@
 		const base =
 			n.key === 'available' || n.key === 'notified'
 				? 'bg-success'
-				: n.key === 'imported'
-					? 'bg-primary'
-					: 'bg-info';
+				: 'bg-info';
 		return cn(base, n.state === 'current' && !isComplete && 'ring-2 ring-info/40 animate-pulse');
 	}
 </script>

@@ -21,7 +21,7 @@
 	);
 
 	const segColor = (i: number) =>
-		i >= stageIndex('available') ? 'bg-success' : i >= stageIndex('imported') ? 'bg-primary' : 'bg-info';
+		i >= stageIndex('available') ? 'bg-success' : 'bg-info';
 </script>
 
 <div class="flex w-full gap-0.5" title={STAGES.map((s) => `${s.label}: ${Math.round(fills[stageIndex(s.key)] * 100)}%`).join(' · ')}>

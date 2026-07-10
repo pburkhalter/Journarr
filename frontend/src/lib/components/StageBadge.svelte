@@ -12,11 +12,9 @@
 			? 'bg-destructive/15 text-destructive'
 			: stage === 'available' || stage === 'notified'
 				? 'bg-success/15 text-success'
-				: stage === 'imported'
-					? 'bg-primary/15 text-primary'
-					: idx >= 2
-						? 'bg-info/15 text-info'
-						: 'bg-muted text-muted-foreground'
+				: idx >= 2
+					? 'bg-info/15 text-info'
+					: 'bg-muted text-muted-foreground'
 	);
 </script>
 
