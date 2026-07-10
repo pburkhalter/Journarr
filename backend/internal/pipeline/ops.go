@@ -109,10 +109,23 @@ type NotifiedOp struct {
 	Episodes  []EpisodeNum `json:"episodes,omitempty"`
 }
 
+// TranscodeOp: Tdarr started or finished transcoding a file. Tdarr reliably
+// knows only the file path; the id fields are optional hints. Matched to a
+// media item by ids first, then by imported path (exact, then basename).
+type TranscodeOp struct {
+	Phase     string `json:"phase,omitempty"` // start|complete (default start)
+	File      string `json:"file,omitempty"`
+	MediaType string `json:"media_type,omitempty"` // movie|tv
+	TmdbID    int64  `json:"tmdb_id,omitempty"`
+	TvdbID    int64  `json:"tvdb_id,omitempty"`
+	Season    int64  `json:"season,omitempty"`
+	Episode   int64  `json:"episode,omitempty"`
+}
+
 // SeerrOp: request lifecycle signal, from webhook or the request poller.
 type SeerrOp struct {
 	SeerrRequestID int64   `json:"seerr_request_id"`
-	Kind           string  `json:"kind"` // pending|approved|declined|available|failed
+	Kind           string  `json:"kind"`       // pending|approved|declined|available|failed
 	MediaType      string  `json:"media_type"` // movie|tv
 	TmdbID         int64   `json:"tmdb_id,omitempty"`
 	TvdbID         int64   `json:"tvdb_id,omitempty"`

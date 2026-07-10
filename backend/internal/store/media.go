@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -163,6 +164,40 @@ func (s *Store) FindEpisodeItemByTvdb(ctx context.Context, tvdbID, season, episo
 	m, err := scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE media_type = 'episode' AND tvdb_id = ? AND season_number = ? AND episode_number = ?
 		ORDER BY id DESC LIMIT 1`, tvdbID, season, episode))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return m, err
+}
+
+// FindItemByImportedPath resolves a media item by the file an arr imported.
+// Tries an exact match first, then a basename match — robust to mount-prefix
+// differences between Tdarr and the arrs (they may see the same file under
+// different roots).
+func (s *Store) FindItemByImportedPath(ctx context.Context, path string) (*MediaItem, error) {
+	if path == "" {
+		return nil, nil
+	}
+	m, err := scanItem(s.db.QueryRowContext(ctx,
+		itemSelect+` WHERE imported_path = ? ORDER BY id DESC LIMIT 1`, path))
+	if err == nil {
+		return m, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+	base := path
+	if i := strings.LastIndexAny(path, `/\`); i >= 0 {
+		base = path[i+1:]
+	}
+	if base == "" {
+		return nil, nil
+	}
+	// Match on trailing basename; escape LIKE metacharacters (release names
+	// often contain '_').
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(base)
+	m, err = scanItem(s.db.QueryRowContext(ctx,
+		itemSelect+` WHERE imported_path LIKE ? ESCAPE '\' ORDER BY id DESC LIMIT 1`, "%"+esc))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

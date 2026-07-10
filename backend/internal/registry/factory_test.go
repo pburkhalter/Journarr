@@ -93,8 +93,27 @@ func TestBuildSkipsEmptyURLAndDupes(t *testing.T) {
 }
 
 func TestBuildRejectsUnsupportedKind(t *testing.T) {
-	if _, err := Build([]Spec{{ID: "x", Kind: KindTdarr, URL: "http://tdarr"}}, time.Second); err == nil {
-		t.Fatal("expected unsupported-kind error for tdarr (added in Phase 2)")
+	if _, err := Build([]Spec{{ID: "x", Kind: Kind("nonesuch"), URL: "http://x"}}, time.Second); err == nil {
+		t.Fatal("expected unsupported-kind error")
+	}
+}
+
+func TestTdarrProvidesTranscodeStage(t *testing.T) {
+	reg, err := Build([]Spec{{ID: "tdarr", Kind: KindTdarr, URL: "http://tdarr:8265"}}, time.Second)
+	if err != nil {
+		t.Fatalf("Build tdarr: %v", err)
+	}
+	tdarr := reg.ByID("tdarr")
+	if tdarr == nil || !tdarr.Has(CapTranscodeStage) {
+		t.Fatal("tdarr should provide CapTranscodeStage")
+	}
+	if !reg.StageActive("transcode") {
+		t.Error("transcode stage should be active when a Tdarr instance exists")
+	}
+	// Without Tdarr, transcode is gated off.
+	empty, _ := Build([]Spec{{ID: "sonarr", Kind: KindSonarr, URL: "http://s"}}, time.Second)
+	if empty.StageActive("transcode") {
+		t.Error("transcode stage should be gated off without a Tdarr instance")
 	}
 }
 

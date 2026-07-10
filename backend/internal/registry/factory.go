@@ -94,6 +94,8 @@ func buildInstance(s Spec, timeout time.Duration) (*Instance, error) {
 		inst.Client = clients.NewWaha(s.URL, s.APIKey, timeout)
 	case KindConcierge:
 		inst.Client = clients.NewConcierge(s.URL, timeout)
+	case KindTdarr:
+		inst.Client = clients.NewTdarr(s.URL, s.APIKey, timeout)
 	default:
 		return nil, fmt.Errorf("unsupported kind %q", s.Kind)
 	}

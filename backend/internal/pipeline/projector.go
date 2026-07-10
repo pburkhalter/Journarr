@@ -161,6 +161,13 @@ func (p *Projector) handle(ctx context.Context, ev store.Event) (match string, r
 		}
 		return p.applyJobTransition(ctx, ev.ID, op)
 
+	case ev.Kind == "transcode":
+		var op TranscodeOp
+		if err := json.Unmarshal(ev.Payload, &op); err != nil {
+			return "ignored", 0, 0, 0
+		}
+		return p.applyTranscode(ctx, ev.ID, op)
+
 	case ev.Kind == "available":
 		var op AvailableOp
 		if err := json.Unmarshal(ev.Payload, &op); err != nil {

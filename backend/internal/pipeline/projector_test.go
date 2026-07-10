@@ -448,3 +448,70 @@ func TestOrphanGrabCreatesRequest(t *testing.T) {
 		t.Fatalf("season pack download not imported: %s", dl.State)
 	}
 }
+
+func TestTranscodeStage(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	movie := &MovieRef{RadarrID: 5, TmdbID: 693134, Title: "Dune"}
+	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 42, Kind: "approved", MediaType: "movie", TmdbID: 693134, Title: "Dune"})
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "dtr", Movie: movie})
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "dtr", Movie: movie, MoviePath: "/media/movies/Dune (2024)/dune.mkv"})
+	p.drain(ctx)
+
+	req, _ := s.FindRequestBySeerrID(ctx, 42)
+	items, _ := s.ListItemsForRequest(ctx, req.ID)
+	if items[0].CurrentStage != "imported" {
+		t.Fatalf("setup: want imported, got %s", items[0].CurrentStage)
+	}
+
+	// Tdarr transcode matched by imported path (exact) → transcode stage.
+	emit(t, s, "tdarr", "transcode", TranscodeOp{Phase: "start", File: "/media/movies/Dune (2024)/dune.mkv"})
+	p.drain(ctx)
+	if got, _ := s.GetMediaItem(ctx, items[0].ID); got.CurrentStage != "transcode" {
+		t.Fatalf("want transcode after tdarr event, got %s", got.CurrentStage)
+	}
+
+	// Basename match works across a different mount prefix.
+	emit(t, s, "tdarr", "transcode", TranscodeOp{Phase: "complete", File: "/other/root/dune.mkv"})
+	p.drain(ctx)
+
+	// Jellyfin available advances past the optional transcode waypoint.
+	emit(t, s, "jellyfin", "available", AvailableOp{MediaItemID: items[0].ID, JellyfinItemID: "jf"})
+	p.drain(ctx)
+	got, _ := s.GetMediaItem(ctx, items[0].ID)
+	if got.CurrentStage != "available" {
+		t.Fatalf("want available, got %s", got.CurrentStage)
+	}
+	// The transcode transition stays in the item history.
+	ts, _ := s.TransitionsForItem(ctx, items[0].ID)
+	var hasTranscode bool
+	for _, tr := range ts {
+		if tr.Stage == "transcode" {
+			hasTranscode = true
+		}
+	}
+	if !hasTranscode {
+		t.Fatal("transcode transition missing from history")
+	}
+}
+
+func TestTranscodeIsOptionalWaypoint(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	movie := &MovieRef{RadarrID: 6, TmdbID: 700, Title: "X"}
+	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 43, Kind: "approved", MediaType: "movie", TmdbID: 700, Title: "X"})
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "dx", Movie: movie})
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "dx", Movie: movie, MoviePath: "/m/x.mkv"})
+	p.drain(ctx)
+
+	req, _ := s.FindRequestBySeerrID(ctx, 43)
+	items, _ := s.ListItemsForRequest(ctx, req.ID)
+	// No transcode event ever fires → 'available' still advances (imported 70 → available 90).
+	emit(t, s, "jellyfin", "available", AvailableOp{MediaItemID: items[0].ID})
+	p.drain(ctx)
+	if got, _ := s.GetMediaItem(ctx, items[0].ID); got.CurrentStage != "available" {
+		t.Fatalf("without transcode, want available, got %s", got.CurrentStage)
+	}
+}
