@@ -261,7 +261,11 @@
 							{selected.last_error}
 						</p>
 					{/if}
-					<StageTimeline transitions={selected.transitions} currentCycle={selected.current_cycle} />
+					<StageTimeline
+						transitions={selected.transitions}
+						currentCycle={selected.current_cycle}
+						currentStage={selected.current_stage}
+					/>
 					{#if selected.imported_path}
 						<p class="mt-2 break-all border-t border-border pt-2 text-[11px] text-muted-foreground">
 							{selected.imported_path}
