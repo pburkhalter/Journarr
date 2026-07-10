@@ -73,6 +73,7 @@ func (c *Concierge) SendNotification(ctx context.Context, n Notification) (strin
 }
 
 type conciergeStatus struct {
+	Version    string   `json:"version"`
 	OK         bool     `json:"ok"`
 	IssueCount int      `json:"issue_count"`
 	Issues     []string `json:"issues"`
@@ -119,5 +120,5 @@ func (c *Concierge) CheckHealth(ctx context.Context) HealthResult {
 			"left":    body.SceneNZB.Left,
 		}
 	}
-	return HealthResult{Status: status, Latency: lat, Detail: detail}
+	return HealthResult{Status: status, Latency: lat, Version: body.Version, Detail: detail}
 }

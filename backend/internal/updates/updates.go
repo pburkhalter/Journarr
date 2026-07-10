@@ -1,7 +1,8 @@
-// Package updates checks GitHub Releases for the self-hosted custom stack
-// (arrarr, waha-concierge, journarr) and reports whether a newer release than
-// the running version exists — the equivalent of the *arr apps' built-in
-// "new update available" check, which we can't get for our own images. Results
+// Package updates checks GitHub for the self-hosted custom stack (arrarr,
+// waha-concierge, journarr) and reports whether a newer tagged version than the
+// running one exists — the equivalent of the *arr apps' built-in "new update
+// available" check, which we can't get for our own images. It reads the repo's
+// git tags (these repos tag releases but don't publish GitHub Releases). Results
 // are cached in memory (GitHub's unauthenticated rate limit is 60/h) and merged
 // into /api/services.
 package updates
@@ -83,7 +84,7 @@ func (c *Checker) pass(ctx context.Context) {
 
 	for service, repo := range c.Repos {
 		cur := current[service]
-		latest, err := c.latestRelease(ctx, repo)
+		latest, err := c.latestTag(ctx, repo)
 		if err != nil {
 			c.Log.Debug("update check: github", "repo", repo, "err", err)
 			continue
@@ -97,9 +98,12 @@ func (c *Checker) pass(ctx context.Context) {
 	}
 }
 
-func (c *Checker) latestRelease(ctx context.Context, repo string) (string, error) {
+// latestTag returns the highest semver git tag in the repo. These repos tag
+// releases (vX.Y.Z) but don't cut GitHub Releases, so /releases/latest 404s —
+// the tags list is the source of truth. One page (100 tags) is plenty.
+func (c *Checker) latestTag(ctx context.Context, repo string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://api.github.com/repos/"+repo+"/releases/latest", nil)
+		"https://api.github.com/repos/"+repo+"/tags?per_page=100", nil)
 	if err != nil {
 		return "", err
 	}
@@ -113,13 +117,25 @@ func (c *Checker) latestRelease(ctx context.Context, repo string) (string, error
 	if resp.StatusCode >= 400 {
 		return "", &httpErr{resp.StatusCode}
 	}
-	var out struct {
-		TagName string `json:"tag_name"`
+	var tags []struct {
+		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(body, &out); err != nil {
+	if err := json.Unmarshal(body, &tags); err != nil {
 		return "", err
 	}
-	return out.TagName, nil
+	best := ""
+	for _, t := range tags {
+		if !isSemver(t.Name) {
+			continue
+		}
+		if best == "" || semverLess(best, t.Name) {
+			best = t.Name
+		}
+	}
+	if best == "" {
+		return "", &httpErr{404}
+	}
+	return best, nil
 }
 
 type httpErr struct{ code int }

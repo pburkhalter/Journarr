@@ -6,17 +6,21 @@
 	import { cn } from '$lib/utils';
 
 	let requests = $state<RequestRollup[]>([]);
-	let filter = $state<'active' | 'done' | 'all'>('active');
+	let filter = $state<'active' | 'waiting' | 'done' | 'all'>('active');
 	let query = $state('');
 	let loaded = $state(false);
 
 	// Sequence guard: a slow older response must never overwrite a newer one.
 	let seq = 0;
 
+	// "waiting" (unreleased movies) is a client-side split of the server's
+	// active set — Active shows only what's truly in flight, Waiting the rest.
+	const serverStatus = (f: string) => (f === 'waiting' ? 'active' : f);
+
 	async function load(f: string, q: string) {
 		const mySeq = ++seq;
 		try {
-			const result = await getRequests(f, q.trim());
+			const result = await getRequests(serverStatus(f), q.trim());
 			if (mySeq === seq) {
 				requests = result;
 				loaded = true;
@@ -25,6 +29,12 @@
 			// backend unreachable — sidebar shows it
 		}
 	}
+
+	const visible = $derived.by(() => {
+		if (filter === 'active') return requests.filter((r) => !r.awaiting_release_at);
+		if (filter === 'waiting') return requests.filter((r) => r.awaiting_release_at);
+		return requests;
+	});
 
 	// initial + live refresh (debounced tick from SSE) + filter changes.
 	// `query` is intentionally NOT read here — the search box has its own
@@ -43,6 +53,7 @@
 
 	const filters = [
 		{ key: 'active', label: 'Active' },
+		{ key: 'waiting', label: 'Waiting' },
 		{ key: 'done', label: 'Done' },
 		{ key: 'all', label: 'All' }
 	] as const;
@@ -77,18 +88,22 @@
 	</div>
 </div>
 
-{#if requests.length === 0 && loaded}
+{#if visible.length === 0 && loaded}
 	<div class="flex max-w-2xl flex-col items-center rounded-lg border border-dashed border-border py-16 text-center">
 		<div class="text-sm font-medium">
-			{filter === 'active' ? 'Nothing in flight' : 'No requests found'}
+			{#if filter === 'active'}Nothing in flight{:else if filter === 'waiting'}Nothing waiting for release{:else}No requests found{/if}
 		</div>
 		<p class="mt-1 max-w-sm text-xs text-muted-foreground">
-			New Seerr requests and arr grabs appear here automatically, live.
+			{#if filter === 'waiting'}
+				Requested movies not yet released show up here until their release date.
+			{:else}
+				New Seerr requests and arr grabs appear here automatically, live.
+			{/if}
 		</p>
 	</div>
 {:else}
 	<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-		{#each requests as r (r.id)}
+		{#each visible as r (r.id)}
 			<PipelineCard request={r} />
 		{/each}
 	</div>

@@ -26,6 +26,19 @@
 		failed: 'bg-destructive/15 text-destructive',
 		canceled: 'bg-muted text-muted-foreground'
 	};
+
+	// A movie requested before its release date: Radarr can't grab it yet, so
+	// show "waiting for release" (with the expected month) instead of a stall.
+	// A far-future sentinel year means Radarr has no date yet (TBA).
+	const awaitingDate = $derived(
+		request.awaiting_release_at ? new Date(request.awaiting_release_at) : null
+	);
+	const awaiting = $derived(!!awaitingDate);
+	const awaitingLabel = $derived(
+		!awaitingDate || awaitingDate.getUTCFullYear() >= 9000
+			? 'date TBA'
+			: awaitingDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+	);
 </script>
 
 <a
@@ -59,14 +72,23 @@
 				</div>
 			</div>
 			<div class="flex shrink-0 items-center gap-1.5">
-				{#if request.stuck_count > 0}
-					<span class="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning" title="{request.stuck_count} item(s) stuck">
-						⏳ {request.stuck_count}
+				{#if awaiting}
+					<span
+						class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+						title="Not released yet — expected {awaitingLabel}"
+					>
+						🕗 waiting for release
+					</span>
+				{:else}
+					{#if request.stuck_count > 0}
+						<span class="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning" title="{request.stuck_count} item(s) stuck">
+							⏳ {request.stuck_count}
+						</span>
+					{/if}
+					<span class={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', statusBadge[request.status])}>
+						{request.status}
 					</span>
 				{/if}
-				<span class={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', statusBadge[request.status])}>
-					{request.status}
-				</span>
 			</div>
 		</div>
 
@@ -75,7 +97,9 @@
 		</div>
 		<div class="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
 			<span>
-				{#if request.media_type === 'tv'}
+				{#if awaiting}
+					expected {awaitingLabel}
+				{:else if request.media_type === 'tv'}
 					{doneCount}/{request.item_count} episodes available
 				{:else}
 					{doneCount === 1 ? 'available' : 'in progress'}

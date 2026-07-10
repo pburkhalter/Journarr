@@ -150,10 +150,11 @@ func (s *Store) RecomputeRequestStatus(ctx context.Context, id int64) (string, e
 // RequestRollup is the flow-board summary of one request.
 type RequestRollup struct {
 	Request
-	ItemCount   int            `json:"item_count"`
-	StageCounts map[string]int `json:"stage_counts"`
-	LastError   string         `json:"last_error,omitempty"`
-	StuckCount  int            `json:"stuck_count"`
+	ItemCount         int            `json:"item_count"`
+	StageCounts       map[string]int `json:"stage_counts"`
+	LastError         string         `json:"last_error,omitempty"`
+	StuckCount        int            `json:"stuck_count"`
+	AwaitingReleaseAt *time.Time     `json:"awaiting_release_at,omitempty"`
 }
 
 func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offset int) ([]RequestRollup, error) {
@@ -191,7 +192,7 @@ func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offse
 		return nil, err
 	}
 	for i := range out {
-		counts, itemCount, lastErr, stuck, err := s.stageCounts(ctx, out[i].ID)
+		counts, itemCount, lastErr, stuck, awaiting, err := s.stageCounts(ctx, out[i].ID)
 		if err != nil {
 			return nil, err
 		}
@@ -199,6 +200,7 @@ func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offse
 		out[i].ItemCount = itemCount
 		out[i].LastError = lastErr
 		out[i].StuckCount = stuck
+		out[i].AwaitingReleaseAt = awaiting
 	}
 	return out, nil
 }
@@ -210,11 +212,11 @@ func (s *Store) RollupForRequest(ctx context.Context, id int64) (*RequestRollup,
 	if err != nil || r == nil {
 		return nil, err
 	}
-	counts, total, lastErr, stuck, err := s.stageCounts(ctx, id)
+	counts, total, lastErr, stuck, awaiting, err := s.stageCounts(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return &RequestRollup{Request: *r, StageCounts: counts, ItemCount: total, LastError: lastErr, StuckCount: stuck}, nil
+	return &RequestRollup{Request: *r, StageCounts: counts, ItemCount: total, LastError: lastErr, StuckCount: stuck, AwaitingReleaseAt: awaiting}, nil
 }
 
 // ActiveTVRequestsWithoutItems finds approved Seerr tv requests whose fan-out
@@ -240,11 +242,11 @@ func (s *Store) ActiveTVRequestsWithoutItems(ctx context.Context) ([]Request, er
 	return out, rows.Err()
 }
 
-func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[string]int, total int, lastError string, stuck int, err error) {
+func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[string]int, total int, lastError string, stuck int, awaiting *time.Time, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT current_stage, COUNT(*) FROM media_items WHERE request_id = ? GROUP BY current_stage`, requestID)
 	if err != nil {
-		return nil, 0, "", 0, err
+		return nil, 0, "", 0, nil, err
 	}
 	defer rows.Close()
 	counts = map[string]int{}
@@ -252,13 +254,13 @@ func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[st
 		var k string
 		var n int
 		if err := rows.Scan(&k, &n); err != nil {
-			return nil, 0, "", 0, err
+			return nil, 0, "", 0, nil, err
 		}
 		counts[k] = n
 		total += n
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, "", 0, err
+		return nil, 0, "", 0, nil, err
 	}
 	var lastErr sql.NullString
 	_ = s.db.QueryRowContext(ctx, `
@@ -267,7 +269,15 @@ func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[st
 		ORDER BY updated_at DESC LIMIT 1`, requestID).Scan(&lastErr)
 	_ = s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM media_items WHERE request_id = ? AND stuck_since IS NOT NULL`, requestID).Scan(&stuck)
-	return counts, total, lastErr.String, stuck, nil
+	// The soonest expected release date among items still waiting on one.
+	var awaitAt sql.NullTime
+	_ = s.db.QueryRowContext(ctx, `
+		SELECT MIN(awaiting_release_at) FROM media_items
+		WHERE request_id = ? AND awaiting_release_at IS NOT NULL`, requestID).Scan(&awaitAt)
+	if awaitAt.Valid {
+		awaiting = &awaitAt.Time
+	}
+	return counts, total, lastErr.String, stuck, awaiting, nil
 }
 
 const reqSelect = `SELECT id, seerr_request_id, media_type, tmdb_id, tvdb_id, title, year,

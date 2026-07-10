@@ -94,6 +94,8 @@ export interface RequestRollup {
 	stage_counts: Record<string, number>;
 	last_error?: string;
 	stuck_count: number;
+	/** set when the request is a movie not yet released (Radarr's expected date) */
+	awaiting_release_at?: string;
 }
 
 export interface MediaItem {

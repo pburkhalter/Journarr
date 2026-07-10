@@ -39,6 +39,7 @@ const (
 	KindWaha      Kind = "waha"
 	KindConcierge Kind = "concierge"
 	KindTdarr     Kind = "tdarr"
+	KindJournarr  Kind = "journarr" // Journarr itself — a self-tile showing its own version
 	KindGeneric   Kind = "generic"
 )
 
@@ -64,6 +65,8 @@ func defaultCaps(k Kind) []Capability {
 		return []Capability{CapHealth, CapIngestSource, CapNotifySend}
 	case KindTdarr:
 		return []Capability{CapHealth, CapTranscodeStage, CapIngestSource}
+	case KindJournarr:
+		return []Capability{CapHealth}
 	default:
 		return []Capability{CapHealth}
 	}
@@ -98,6 +101,8 @@ func defaultLabel(k Kind) string {
 		return "Concierge"
 	case KindTdarr:
 		return "Tdarr"
+	case KindJournarr:
+		return "Journarr"
 	default:
 		return string(k)
 	}
@@ -116,4 +121,5 @@ var kindOrder = map[Kind]int{
 	KindTdarr:     70,
 	KindWaha:      80,
 	KindConcierge: 90,
+	KindJournarr:  100,
 }

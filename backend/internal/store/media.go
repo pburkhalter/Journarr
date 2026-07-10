@@ -25,25 +25,30 @@ type MediaItem struct {
 	LastError       string     `json:"last_error,omitempty"`
 	ImportedPath    string     `json:"imported_path,omitempty"`
 	JellyfinItemID  string     `json:"jellyfin_item_id,omitempty"`
+	AwaitingReleaseAt *time.Time `json:"awaiting_release_at,omitempty"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 const itemSelect = `SELECT id, request_id, media_type, tmdb_id, tvdb_id, sonarr_series_id,
 	sonarr_episode_id, radarr_movie_id, season_number, episode_number, title,
 	current_stage, current_cycle, stuck_since, COALESCE(last_error,''),
-	COALESCE(imported_path,''), COALESCE(jellyfin_item_id,''), updated_at FROM media_items`
+	COALESCE(imported_path,''), COALESCE(jellyfin_item_id,''), awaiting_release_at, updated_at FROM media_items`
 
 func scanItem(row rowScanner) (*MediaItem, error) {
 	var m MediaItem
 	var stuck sql.NullTime
+	var awaiting sql.NullTime
 	var updated sql.NullTime
 	var season, episode int64
 	if err := row.Scan(&m.ID, &m.RequestID, &m.MediaType, &m.TmdbID, &m.TvdbID,
 		&m.SonarrSeriesID, &m.SonarrEpisodeID, &m.RadarrMovieID,
 		&season, &episode, &m.Title,
 		&m.CurrentStage, &m.CurrentCycle, &stuck, &m.LastError,
-		&m.ImportedPath, &m.JellyfinItemID, &updated); err != nil {
+		&m.ImportedPath, &m.JellyfinItemID, &awaiting, &updated); err != nil {
 		return nil, err
+	}
+	if awaiting.Valid {
+		m.AwaitingReleaseAt = &awaiting.Time
 	}
 	if season >= 0 {
 		m.SeasonNumber = &season

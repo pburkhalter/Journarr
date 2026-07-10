@@ -6,6 +6,10 @@
 
 	let { service, label }: { service: ServiceHealth; label?: string } = $props();
 
+	// Normalize the reported version: some services (e.g. arrarr) already prefix
+	// a "v", and we add our own — strip theirs so we never render "vv3.1.4".
+	const version = $derived(service.version ? service.version.replace(/^v/i, '') : '');
+
 	const detail = $derived(parseDetail(service));
 	// WAHA status folded into the concierge tile (no standalone WAHA tile).
 	const waha = $derived((detail['waha'] as string | undefined) ?? null);
@@ -39,7 +43,7 @@
 			<div>
 				<div class="text-sm font-medium leading-none">{label ?? titleCase(service.service)}</div>
 				<div class="mt-1 text-[11px] text-muted-foreground">
-					{#if service.version}v{service.version}{/if}
+					{#if version}v{version}{/if}
 					{#if serverName}
 						· {serverName}{/if}
 				</div>

@@ -17,6 +17,7 @@ func (s *Store) MarkStuck(ctx context.Context, thresholds map[string]int) (int64
 			UPDATE media_items SET stuck_since = CURRENT_TIMESTAMP
 			WHERE current_stage = ? AND stuck_since IS NULL
 			AND (last_error IS NULL OR last_error = '')
+			AND awaiting_release_at IS NULL
 			AND request_id IN (SELECT id FROM requests WHERE status = 'active')
 			AND updated_at < datetime('now', ?)
 			AND NOT EXISTS (

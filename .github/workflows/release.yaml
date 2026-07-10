@@ -33,6 +33,16 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
 
+      # A presentable build marker for the self-tile: the semver tag on a tag
+      # push, else a date+short-sha (Journarr deploys :latest continuously).
+      - id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "v=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "v=$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -42,6 +52,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.ver.outputs.v }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

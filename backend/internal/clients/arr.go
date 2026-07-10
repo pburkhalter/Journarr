@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -81,4 +82,44 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 		res.Detail["health_messages"] = warnings
 	}
 	return res
+}
+
+// MovieRelease is Radarr's release/availability view of a movie — enough to
+// tell whether a requested film is out yet and, if not, when it's expected.
+type MovieRelease struct {
+	TmdbID          int64
+	IsAvailable     bool   // true once past minimumAvailability (grabbable)
+	Status          string // tba|announced|inCinemas|released|deleted
+	Monitored       bool
+	DigitalRelease  *time.Time
+	PhysicalRelease *time.Time
+	InCinemas       *time.Time
+}
+
+// LookupMovieByTmdb fetches Radarr's record for a tmdb id. Returns (nil, nil)
+// when Radarr has no such movie (never added / removed). Radarr only — call it
+// on the radarr instance.
+func (c *Arr) LookupMovieByTmdb(ctx context.Context, tmdbID int64) (*MovieRelease, error) {
+	var out []struct {
+		TmdbID          int64      `json:"tmdbId"`
+		IsAvailable     bool       `json:"isAvailable"`
+		Status          string     `json:"status"`
+		Monitored       bool       `json:"monitored"`
+		DigitalRelease  *time.Time `json:"digitalRelease"`
+		PhysicalRelease *time.Time `json:"physicalRelease"`
+		InCinemas       *time.Time `json:"inCinemas"`
+	}
+	url := fmt.Sprintf("%s%s/movie?tmdbId=%d", c.BaseURL, c.APIBase, tmdbID)
+	if _, err := getJSON(ctx, c.HTTP, url, c.headers(), &out); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	m := out[0]
+	return &MovieRelease{
+		TmdbID: m.TmdbID, IsAvailable: m.IsAvailable, Status: m.Status,
+		Monitored: m.Monitored, DigitalRelease: m.DigitalRelease,
+		PhysicalRelease: m.PhysicalRelease, InCinemas: m.InCinemas,
+	}, nil
 }

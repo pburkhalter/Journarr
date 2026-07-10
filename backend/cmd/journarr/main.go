@@ -73,6 +73,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Journarr's own tile: shows the running build version (no network probe).
+	specs = append(specs, registry.Spec{
+		ID: "journarr", Kind: registry.KindJournarr, URL: "self",
+		Extra: map[string]string{"version": versionStr},
+	})
 	reg, err := registry.Build(specs, cfg.UpstreamTimeout)
 	if err != nil {
 		return err
@@ -148,6 +153,15 @@ func run() error {
 			Interval: cfg.PresencePollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
+	// Release watcher: flag requested/approved movies that aren't out yet as
+	// "waiting for release" (with Radarr's expected date) so they don't read
+	// as stalled.
+	if radarr != nil {
+		go (&poll.ReleasePoller{
+			Store: st, Log: log, Radarr: radarr,
+			Interval: time.Hour, Publish: broker.Publish,
+		}).Run(ctx)
+	}
 
 	// Daily events reaper.
 	go func() {
@@ -206,13 +220,18 @@ func run() error {
 	go projector.Run(ctx)
 	go flowCtrl.Run(ctx)
 
-	// GitHub update checker for the self-hosted custom stack. Only services
-	// that expose a semver build on their health surface can be compared;
-	// arrarr does (via /status.json version). concierge/journarr can be added
-	// here once they surface their version too.
+	// GitHub update checker for the self-hosted custom stack. Compares the
+	// running version (from each service's health surface) against the repo's
+	// highest git tag. arrarr + concierge cut semver tags, so both get an
+	// update badge. Journarr itself tracks :latest (no tags) — its tile shows
+	// the build version but no update badge, which is correct for a
+	// continuously-deployed app.
 	updateRepos := map[string]string{}
 	if reg.Arrarr() != nil {
 		updateRepos["arrarr"] = "pburkhalter/arrarr"
+	}
+	if reg.Concierge() != nil {
+		updateRepos["concierge"] = "pburkhalter/waha-concierge"
 	}
 	var updateChecker *updates.Checker
 	if len(updateRepos) > 0 {
