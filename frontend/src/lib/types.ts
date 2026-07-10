@@ -36,6 +36,18 @@ export interface Stage {
 	active: boolean;
 }
 
+/** A capability-derived action (GET /api/actions), invoked via /api/actions/execute. */
+export interface Action {
+	id: string;
+	label: string;
+	kind: string; // search-missing|library-scan|cancel|retry|season-search
+	scope: string; // global|request|season|item
+	instance_id?: string;
+	request_id?: number;
+	season?: number;
+	danger?: boolean;
+}
+
 export interface Stats {
 	requests: Record<string, number>;
 	media_items: Record<string, number>;

@@ -7,8 +7,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/pburkhalter/journarr/internal/clients"
+	"github.com/pburkhalter/journarr/internal/registry"
 	"github.com/pburkhalter/journarr/internal/store"
 )
 
@@ -19,6 +21,7 @@ type Actions struct {
 	Radarr  *clients.Arr
 	Seerr   *clients.Seerr
 	Jelly   *clients.Jellyfin
+	Reg     *registry.Registry // capability enumeration for the Actions tab
 	Wake    func()
 	Publish func(event string, data any)
 }
@@ -35,11 +38,21 @@ func (a *Actions) arrFor(mediaType, arr string) *clients.Arr {
 }
 
 func (a *Actions) finish(ctx context.Context, id int64, err error) error {
-	status, detail := "ok", ""
+	return a.finishDetail(ctx, id, err, "")
+}
+
+// finishDetail closes an audit row. On success it records okDetail (used to
+// capture non-numeric targets, e.g. which instance a search-missing hit). The
+// terminal write runs on a fresh context so the row still commits even if the
+// action's detached deadline already expired mid-run.
+func (a *Actions) finishDetail(_ context.Context, id int64, err error, okDetail string) error {
+	status, detail := "ok", okDetail
 	if err != nil {
 		status, detail = "failed", err.Error()
 	}
-	_ = a.Store.FinishAction(ctx, id, status, detail)
+	wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = a.Store.FinishAction(wctx, id, status, detail)
 	if a.Publish != nil {
 		a.Publish("action.result", map[string]any{"id": id, "status": status, "detail": detail})
 	}
@@ -137,6 +150,12 @@ func (a *Actions) Cancel(ctx context.Context, requestID int64) error {
 	req, err := a.Store.GetRequest(ctx, requestID)
 	if err != nil || req == nil {
 		return a.finish(ctx, id, fmt.Errorf("request %d not found", requestID))
+	}
+	// Re-check the precondition server-side (the UI gate is not authoritative):
+	// cancelling an already-imported/completed request would unmonitor media and
+	// delete the Seerr request for content that succeeded.
+	if req.Status != "active" && req.Status != "partial" && req.Status != "failed" {
+		return a.finish(ctx, id, fmt.Errorf("request %d is %s — not cancelable", requestID, req.Status))
 	}
 
 	downloads, _ := a.Store.DownloadsForRequest(ctx, requestID)

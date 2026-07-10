@@ -13,6 +13,7 @@
 	const nav = [
 		{ href: '/', label: 'Flow' },
 		{ href: '/history', label: 'History' },
+		{ href: '/actions', label: 'Actions' },
 		{ href: '/services', label: 'Services' }
 	];
 </script>

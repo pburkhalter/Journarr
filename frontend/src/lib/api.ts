@@ -1,4 +1,5 @@
 import type {
+	Action,
 	Instance,
 	Me,
 	RawEvent,
@@ -75,3 +76,13 @@ async function post(path: string, body?: unknown): Promise<void> {
 export const retryItem = (mediaItemID: number) => post('/api/actions/retry', { media_item_id: mediaItemID });
 export const cancelRequest = (requestID: number) => post('/api/actions/cancel', { request_id: requestID });
 export const jellyfinScan = () => post('/api/actions/jellyfin-scan');
+
+export async function getActions(scope = 'global', targetId?: number): Promise<Action[]> {
+	const params = new URLSearchParams({ scope });
+	if (targetId) params.set('target_id', String(targetId));
+	const body = await get<{ actions: Action[] }>(`/api/actions?${params}`);
+	return body.actions ?? [];
+}
+
+export const executeAction = (kind: string, params: Record<string, unknown>) =>
+	post('/api/actions/execute', { kind, params });

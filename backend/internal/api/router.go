@@ -189,6 +189,33 @@ func NewRouter(d Deps) http.Handler {
 				})
 			})
 
+			// Capability-derived action catalog for the Actions tab / detail view.
+			r.Get("/actions", func(w http.ResponseWriter, req *http.Request) {
+				scope := req.URL.Query().Get("scope")
+				if scope == "" {
+					scope = "global"
+				}
+				targetID, _ := strconv.ParseInt(req.URL.Query().Get("target_id"), 10, 64)
+				writeJSON(w, map[string]any{"actions": d.Actions.Available(req.Context(), scope, targetID)})
+			})
+			r.Post("/actions/execute", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					Kind   string         `json:"kind"`
+					Params map[string]any `json:"params"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Kind == "" {
+					http.Error(w, "kind required", http.StatusBadRequest)
+					return
+				}
+				actx, cancel := detach()
+				defer cancel()
+				if err := d.Actions.Execute(actx, body.Kind, body.Params); err != nil {
+					httpError(w, d.Log, "execute action", err)
+					return
+				}
+				writeJSON(w, map[string]string{"status": "ok"})
+			})
+
 			r.Post("/actions/jellyfin-scan", func(w http.ResponseWriter, req *http.Request) {
 				actx, cancel := detach()
 				defer cancel()

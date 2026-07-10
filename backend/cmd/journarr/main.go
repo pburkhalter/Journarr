@@ -181,6 +181,7 @@ func run() error {
 	acts := &actions.Actions{
 		Store: st, Log: log,
 		Sonarr: sonarr, Radarr: radarr, Seerr: seerr, Jelly: jelly,
+		Reg:  reg,
 		Wake: projector.Wake, Publish: broker.Publish,
 	}
 

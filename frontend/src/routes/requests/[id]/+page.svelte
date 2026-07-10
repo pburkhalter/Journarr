@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { cancelRequest, getMediaEvents, getRequestDetail, retryItem } from '$lib/api';
+	import {
+		cancelRequest,
+		executeAction,
+		getActions,
+		getMediaEvents,
+		getRequestDetail,
+		retryItem
+	} from '$lib/api';
 	import StageBadge from '$lib/components/StageBadge.svelte';
 	import StageStrip from '$lib/components/StageStrip.svelte';
 	import StageTimeline from '$lib/components/StageTimeline.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
-	import type { ItemDetail, RawEvent, RequestDetail } from '$lib/types';
+	import type { Action, ItemDetail, RawEvent, RequestDetail } from '$lib/types';
 	import { cn, relativeTime } from '$lib/utils';
 
 	let busy = $state(false);
@@ -21,9 +28,25 @@
 		});
 		if (!ok) return;
 		busy = true;
+		actionMsg = '';
 		try {
 			await cancelRequest(id);
 			await loadDetail(id);
+		} catch {
+			actionMsg = 'Cancel failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function runSeason(a: Action) {
+		busy = true;
+		actionMsg = '';
+		try {
+			await executeAction('season-search', { request_id: a.request_id, season: a.season });
+			await loadDetail(id);
+		} catch {
+			actionMsg = `Season ${a.season} search failed`;
 		} finally {
 			busy = false;
 		}
@@ -37,9 +60,12 @@
 		});
 		if (!ok) return;
 		busy = true;
+		actionMsg = '';
 		try {
 			await retryItem(item.id);
 			await loadDetail(id);
+		} catch {
+			actionMsg = 'Retry failed';
 		} finally {
 			busy = false;
 		}
@@ -48,10 +74,14 @@
 	const id = $derived(Number(page.params.id));
 
 	let detail = $state<RequestDetail | null>(null);
+	let requestActions = $state<Action[]>([]);
+	const seasonActions = $derived(requestActions.filter((a) => a.kind === 'season-search'));
 	let selected = $state<ItemDetail | null>(null);
 	let rawEvents = $state<RawEvent[] | null>(null);
 	let rawError = $state(false);
 	let notFound = $state(false);
+	let loadError = $state(false);
+	let actionMsg = $state('');
 
 	$effect(() => {
 		void live.pipelineTick;
@@ -62,9 +92,12 @@
 	$effect(() => {
 		void id;
 		notFound = false;
+		loadError = false;
+		actionMsg = '';
 		detail = null;
 		selected = null;
 		rawEvents = null;
+		requestActions = [];
 	});
 
 	async function loadDetail(reqID: number) {
@@ -74,6 +107,13 @@
 			if (reqID !== id) return; // stale response after navigation
 			detail = result;
 			notFound = false;
+			loadError = false;
+			try {
+				const acts = await getActions('request', reqID);
+				if (reqID === id) requestActions = acts; // re-check: response may be stale
+			} catch {
+				if (reqID === id) requestActions = [];
+			}
 			if (selected) {
 				selected = detail.items.find((i) => i.id === selected!.id) ?? null;
 			}
@@ -81,8 +121,10 @@
 				selected = detail.items[0];
 			}
 		} catch (e) {
+			if (reqID !== id) return;
 			// api.ts throws `${path}: ${status}` — match the status suffix only
-			if (reqID === id && /: 404$/.test((e as Error).message)) notFound = true;
+			if (/: 404$/.test((e as Error).message)) notFound = true;
+			else loadError = true;
 		}
 	}
 
@@ -131,7 +173,16 @@
 
 {#if notFound}
 	<p class="text-sm text-muted-foreground">Request not found. <a href="/" class="underline">Back to Flow</a></p>
+{:else if loadError}
+	<div class="text-sm text-muted-foreground">
+		Couldn't load this request.
+		<button class="underline" onclick={() => loadDetail(id)}>Retry</button>
+		· <a href="/" class="underline">Back to Flow</a>
+	</div>
 {:else if detail}
+	{#if actionMsg}
+		<div class="mb-3 rounded-md bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">{actionMsg}</div>
+	{/if}
 	<a href="/" class="text-xs text-muted-foreground hover:text-foreground">← Flow</a>
 
 	<div class="mt-3 flex gap-5">
@@ -166,6 +217,20 @@
 			<div class="mt-4 max-w-xl">
 				<StageStrip counts={detail.request.stage_counts ?? {}} total={detail.request.item_count} />
 			</div>
+			{#if seasonActions.length > 0}
+				<div class="mt-3 flex flex-wrap items-center gap-1.5">
+					<span class="text-[11px] text-muted-foreground">Targeted search:</span>
+					{#each seasonActions as a (a.id)}
+						<button
+							onclick={() => runSeason(a)}
+							disabled={busy}
+							class="rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+						>
+							Season {a.season}
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</div>
 
