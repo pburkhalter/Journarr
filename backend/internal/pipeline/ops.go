@@ -107,6 +107,9 @@ type NotifiedOp struct {
 	TmdbID    int64        `json:"tmdb_id"`
 	Title     string       `json:"title,omitempty"`
 	Episodes  []EpisodeNum `json:"episodes,omitempty"`
+	// MediaItemIDs, when set (Journarr-owned notifications), applies 'notified'
+	// to exactly those items — deterministic, unlike the tmdb/episode fallback.
+	MediaItemIDs []int64 `json:"media_item_ids,omitempty"`
 }
 
 // TranscodeOp: Tdarr started or finished transcoding a file. Tdarr reliably

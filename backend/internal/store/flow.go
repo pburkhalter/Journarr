@@ -102,6 +102,14 @@ func (s *Store) FinishFlowTask(ctx context.Context, id int64, status string) err
 	return err
 }
 
+// ReleaseFlowTaskDedupe clears a running task's dedupe key without finishing it,
+// so a concurrent completion can enqueue a follow-up for the same target (used
+// to catch stragglers that arrive during a long-running task's network call).
+func (s *Store) ReleaseFlowTaskDedupe(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE flow_tasks SET dedupe_key = NULL WHERE id = ?`, id)
+	return err
+}
+
 // RescheduleFlowTask bumps the attempt count and defers a retry.
 func (s *Store) RescheduleFlowTask(ctx context.Context, id int64, runAfter time.Time) error {
 	_, err := s.db.ExecContext(ctx, `

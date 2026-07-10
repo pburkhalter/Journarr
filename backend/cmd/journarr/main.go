@@ -193,6 +193,12 @@ func run() error {
 	// retry/backoff. All settings default off, so behavior is unchanged until a
 	// user enables one in the Flow menu.
 	flowCtrl := flow.New(st, log, acts, cfg.StuckPollInterval)
+	flowCtrl.Wake = projector.Wake
+	// Notify-on-complete needs concierge + its /notify/send token; without both,
+	// the setting is inert (enqueued notify tasks fail-and-exhaust harmlessly).
+	if concierge := reg.Concierge(); concierge != nil && cfg.ConciergeAPIKey != "" {
+		flowCtrl.Notifier = concierge
+	}
 	if err := flowCtrl.Reload(ctx); err != nil {
 		log.Warn("flow: initial settings load failed", "err", err)
 	}

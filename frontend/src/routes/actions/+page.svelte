@@ -186,6 +186,21 @@
 					<span class="text-[11px] text-muted-foreground">min</span>
 				</span>
 			</div>
+			<label class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
+				<span class="min-w-0">
+					<span class="block text-sm font-medium">Send notifications via Journarr</span>
+					<span class="text-[11px] text-muted-foreground">
+						Journarr triggers the WhatsApp notice on completion &amp; records the Notified stage.
+						Requires concierge <code class="text-foreground">NOTIFY_MODE=journarr</code> + a shared token.
+					</span>
+				</span>
+				<input
+					type="checkbox"
+					class="size-4 shrink-0 accent-primary"
+					checked={flowOn('notify_on_complete')}
+					onchange={(e) => saveFlow({ notify_on_complete: e.currentTarget.checked ? 'true' : 'false' })}
+				/>
+			</label>
 		</div>
 	</section>
 {/if}

@@ -57,7 +57,8 @@ type Config struct {
 	WahaURL    string `env:"WAHA_URL"`
 	WahaAPIKey string `env:"WAHA_API_KEY"`
 
-	ConciergeURL string `env:"CONCIERGE_URL"`
+	ConciergeURL    string `env:"CONCIERGE_URL"`
+	ConciergeAPIKey string `env:"CONCIERGE_API_KEY"` // token for the /notify/send endpoint
 
 	// Modular instance config. When set, JOURNARR_INSTANCES (inline JSON array)
 	// or JOURNARR_INSTANCES_FILE (path to the same) fully replaces the flat env
@@ -129,7 +130,7 @@ func (c *Config) legacySpecs() []registry.Spec {
 		wahaParent = "concierge"
 	}
 	add(registry.Spec{ID: "waha", Kind: registry.KindWaha, URL: c.WahaURL, APIKey: c.WahaAPIKey, ParentID: wahaParent})
-	add(registry.Spec{ID: "concierge", Kind: registry.KindConcierge, URL: c.ConciergeURL})
+	add(registry.Spec{ID: "concierge", Kind: registry.KindConcierge, URL: c.ConciergeURL, APIKey: c.ConciergeAPIKey})
 	return specs
 }
 

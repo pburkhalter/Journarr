@@ -161,6 +161,27 @@ func (p *Projector) applyAvailable(ctx context.Context, eventID int64, op Availa
 // 'notified' (the last stage) also serves as a completion safety net when
 // Jellyfin matching never lands.
 func (p *Projector) applyNotified(ctx context.Context, eventID int64, op NotifiedOp) (string, int64, int64, int64) {
+	// Journarr-owned path: exact item ids, no matching needed.
+	if len(op.MediaItemIDs) > 0 {
+		var reqID, first int64
+		for _, mid := range op.MediaItemIDs {
+			item, err := p.Store.GetMediaItem(ctx, mid)
+			if err != nil || item == nil {
+				continue
+			}
+			if item.RequestID != nil {
+				reqID = *item.RequestID
+			}
+			p.apply(ctx, item.ID, reqID, eventID, "notified", "journarr")
+			if first == 0 {
+				first = item.ID
+			}
+		}
+		if first == 0 {
+			return "orphan", 0, 0, 0
+		}
+		return "matched", reqID, first, 0
+	}
 	if op.TmdbID == 0 {
 		return "ignored", 0, 0, 0
 	}

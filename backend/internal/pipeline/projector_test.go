@@ -496,6 +496,26 @@ func TestTranscodeStage(t *testing.T) {
 	}
 }
 
+func TestNotifiedByMediaItemIDs(t *testing.T) {
+	ctx := context.Background()
+	p, s := testProjector(t)
+
+	movie := &MovieRef{RadarrID: 1, TmdbID: 500, Title: "Film"}
+	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 1, Kind: "approved", MediaType: "movie", TmdbID: 500, Title: "Film"})
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "d1", Movie: movie})
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "d1", Movie: movie, MoviePath: "/f.mkv"})
+	p.drain(ctx)
+	req, _ := s.FindRequestBySeerrID(ctx, 1)
+	items, _ := s.ListItemsForRequest(ctx, req.ID)
+
+	// Journarr-owned notify: apply 'notified' by exact item id (no tmdb match).
+	emit(t, s, "journarr", "notified", NotifiedOp{MediaItemIDs: []int64{items[0].ID}})
+	p.drain(ctx)
+	if got, _ := s.GetMediaItem(ctx, items[0].ID); got.CurrentStage != "notified" {
+		t.Fatalf("want notified via item id, got %s", got.CurrentStage)
+	}
+}
+
 func TestTranscodeIsOptionalWaypoint(t *testing.T) {
 	ctx := context.Background()
 	p, s := testProjector(t)

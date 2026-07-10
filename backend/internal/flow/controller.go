@@ -7,6 +7,7 @@ package flow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -14,16 +15,25 @@ import (
 	"time"
 
 	"github.com/pburkhalter/journarr/internal/actions"
+	"github.com/pburkhalter/journarr/internal/clients"
+	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/store"
 )
 
 const maxAttempts = 4
 
+// Notifier delivers a completion notice (satisfied by *clients.Concierge).
+type Notifier interface {
+	SendNotification(context.Context, clients.Notification) (string, error)
+}
+
 type Controller struct {
-	Store *store.Store
-	Log   *slog.Logger
-	Acts  *actions.Actions
-	Tick  time.Duration // worker/sweeper cadence
+	Store    *store.Store
+	Log      *slog.Logger
+	Acts     *actions.Actions
+	Notifier Notifier // nil ⇒ notify-on-complete disabled
+	Wake     func()   // wakes the projector after inserting a notified event
+	Tick     time.Duration
 
 	mu       sync.RWMutex
 	settings map[string]string
@@ -82,6 +92,12 @@ func (c *Controller) OnStageApplied(itemID, reqID int64, stage string, cycle int
 		_, _ = c.Store.EnqueueFlowTask(ctx, "jellyfin_scan", "", 0, "", "jellyfin_scan",
 			time.Now().Add(45*time.Second))
 	}
+	if reqID > 0 && c.on("notify_on_complete") && stage == c.get("notify_stage", "available") {
+		// One pending notify per request, delayed to group a season's episodes
+		// into a single message. Cleared on finish so a later completion re-fires.
+		_, _ = c.Store.EnqueueFlowTask(ctx, "notify", "request", reqID, "",
+			fmt.Sprintf("notify:req:%d", reqID), time.Now().Add(60*time.Second))
+	}
 }
 
 // Run drains due tasks and applies time-based rules on each tick.
@@ -128,9 +144,94 @@ func (c *Controller) exec(ctx context.Context, task store.FlowTask) error {
 		return c.Acts.JellyfinScan(ctx)
 	case "retry":
 		return c.Acts.Retry(ctx, task.TargetID)
+	case "notify":
+		return c.execNotify(ctx, task)
 	default:
 		return fmt.Errorf("unknown flow task kind %q", task.Kind)
 	}
+}
+
+// execNotify sends one grouped completion notice for a request and records
+// 'notified' on exactly the items it messaged about (deterministic — no tmdb
+// matching). Items already past notify_stage are skipped, so re-runs are safe.
+func (c *Controller) execNotify(ctx context.Context, task store.FlowTask) error {
+	if c.Notifier == nil {
+		return fmt.Errorf("notifier not configured")
+	}
+	reqID := task.TargetID
+	notifyStage := c.get("notify_stage", "available")
+	req, err := c.Store.GetRequest(ctx, reqID)
+	if err != nil || req == nil {
+		return nil // request gone — nothing to do
+	}
+	items, err := c.Store.ListItemsForRequest(ctx, reqID)
+	if err != nil {
+		return err
+	}
+	var pending []store.MediaItem
+	for _, it := range items {
+		if it.CurrentStage == notifyStage { // reached completion but not yet notified
+			pending = append(pending, it)
+		}
+	}
+	if len(pending) == 0 {
+		return nil // already notified (or nothing at the stage)
+	}
+
+	notif := clients.Notification{MediaType: req.MediaType, Title: req.Title, PosterURL: req.PosterURL}
+	if req.TmdbID != nil {
+		notif.TmdbID = *req.TmdbID
+	}
+	if req.Year != nil {
+		notif.Year = *req.Year
+	}
+	sent := make(map[int64]bool, len(pending))
+	ids := make([]int64, 0, len(pending))
+	for _, it := range pending {
+		ids = append(ids, it.ID)
+		sent[it.ID] = true
+		if it.MediaType == "episode" && it.SeasonNumber != nil && it.EpisodeNumber != nil {
+			notif.Episodes = append(notif.Episodes, clients.NotifyEpisode{
+				Season: *it.SeasonNumber, Episode: *it.EpisodeNumber, Title: it.Title,
+			})
+		}
+	}
+
+	if _, err := c.Notifier.SendNotification(ctx, notif); err != nil {
+		return err // retried with backoff (nothing sent, nothing recorded)
+	}
+	// Record 'notified' via the event path (single writer = the projector).
+	// The message is already delivered, so retry the insert a few times rather
+	// than dropping the record (a lost record would let a later completion
+	// re-select and re-notify these items).
+	payload, _ := json.Marshal(pipeline.NotifiedOp{
+		MediaItemIDs: ids, MediaType: req.MediaType, Title: req.Title,
+	})
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, _, err = c.Store.InsertEvent(ctx, "journarr", "notified", "", payload); err == nil {
+			break
+		}
+		c.Log.Warn("flow: insert notified event", "req", reqID, "attempt", attempt+1, "err", err)
+	}
+	if c.Wake != nil {
+		c.Wake()
+	}
+	c.Log.Info("flow: sent completion notice", "req", reqID, "items", len(ids))
+
+	// Catch stragglers that reached notify_stage during the send window: they
+	// were coalesced away by this task's dedupe key and their OnStageApplied was
+	// dropped. Release the key and re-enqueue so they aren't lost. The sent set
+	// excludes the just-messaged items (no double-send).
+	fresh, _ := c.Store.ListItemsForRequest(ctx, reqID)
+	for _, it := range fresh {
+		if it.CurrentStage == notifyStage && !sent[it.ID] {
+			_ = c.Store.ReleaseFlowTaskDedupe(ctx, task.ID)
+			_, _ = c.Store.EnqueueFlowTask(ctx, "notify", "request", reqID, "",
+				fmt.Sprintf("notify:req:%d", reqID), time.Now().Add(20*time.Second))
+			break
+		}
+	}
+	return nil
 }
 
 // sweep applies the auto-retry-stuck rule. Clearing the stuck flag on enqueue
