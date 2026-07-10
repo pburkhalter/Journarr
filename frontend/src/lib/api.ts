@@ -1,4 +1,13 @@
-import type { Me, RawEvent, RequestDetail, RequestRollup, ServiceHealth, Stats } from './types';
+import type {
+	Instance,
+	Me,
+	RawEvent,
+	RequestDetail,
+	RequestRollup,
+	ServiceHealth,
+	Stage,
+	Stats
+} from './types';
 
 async function get<T>(path: string): Promise<T> {
 	const res = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -18,6 +27,16 @@ export async function getMe(): Promise<Me> {
 export async function getServices(): Promise<ServiceHealth[]> {
 	const body = await get<{ services: ServiceHealth[] }>('/api/services');
 	return body.services ?? [];
+}
+
+export async function getInstances(): Promise<Instance[]> {
+	const body = await get<{ instances: Instance[] }>('/api/instances');
+	return body.instances ?? [];
+}
+
+export async function getStages(): Promise<Stage[]> {
+	const body = await get<{ stages: Stage[] }>('/api/stages');
+	return body.stages ?? [];
 }
 
 export async function getStats(): Promise<Stats> {

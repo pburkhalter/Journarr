@@ -50,6 +50,11 @@ func (c *Concierge) CheckHealth(ctx context.Context) HealthResult {
 		"stuck_jobs": body.Metrics.StuckJobs,
 		"unflushed":  body.Metrics.Unflushed,
 	}
+	// WAHA is folded into the concierge tile (no standalone WAHA tile): surface
+	// concierge's own view of the WhatsApp session here.
+	if body.Metrics.Waha != "" {
+		detail["waha"] = body.Metrics.Waha
+	}
 	if len(body.Issues) > 0 {
 		detail["issues"] = body.Issues
 	}

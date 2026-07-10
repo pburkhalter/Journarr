@@ -17,13 +17,34 @@ export interface TorboxCreate {
 	capacity: number;
 }
 
+/** Registry instance metadata (GET /api/instances) — drives tile order/label/fold. */
+export interface Instance {
+	id: string;
+	kind: string;
+	label: string;
+	order: number;
+	parent_id?: string;
+	capabilities: string[];
+	stages?: string[];
+}
+
+/** Active pipeline stage (GET /api/stages) — the canonical, single-sourced enum. */
+export interface Stage {
+	key: string;
+	ordinal: number;
+	label: string;
+	active: boolean;
+}
+
 export interface Stats {
 	requests: Record<string, number>;
 	media_items: Record<string, number>;
 	stuck?: number;
 }
 
-// Pipeline stages in ordinal order. 'transcode' ships inactive (Tdarr later).
+// Fallback stage list used only until GET /api/stages loads into live.stages
+// (the canonical source). 'transcode' is omitted here; the backend catalog
+// gates it behind a Tdarr instance.
 export const STAGES = [
 	{ key: 'requested', label: 'Requested' },
 	{ key: 'approved', label: 'Approved' },

@@ -1,11 +1,14 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/pburkhalter/journarr/internal/registry"
 )
 
 type Config struct {
@@ -56,6 +59,13 @@ type Config struct {
 
 	ConciergeURL string `env:"CONCIERGE_URL"`
 
+	// Modular instance config. When set, JOURNARR_INSTANCES (inline JSON array)
+	// or JOURNARR_INSTANCES_FILE (path to the same) fully replaces the flat env
+	// vars above. Empty ⇒ the flat vars are synthesized into instances, so
+	// existing deployments keep working unchanged.
+	InstancesJSON string `env:"JOURNARR_INSTANCES"`
+	InstancesFile string `env:"JOURNARR_INSTANCES_FILE"`
+
 	// SSO via OIDC (Pocket ID, Authentik, …). Setting OIDC_ISSUER_URL turns
 	// it on; without it Journarr is open (LAN mode).
 	PublicURL         string        `env:"JOURNARR_PUBLIC_URL"`
@@ -69,6 +79,59 @@ type Config struct {
 }
 
 func (c *Config) SSOEnabled() bool { return c.OIDCIssuerURL != "" }
+
+// InstanceSpecs returns the instance specs to build the registry from. If
+// JOURNARR_INSTANCES[_FILE] is set it is parsed and takes full precedence;
+// otherwise the legacy flat env vars are synthesized into equivalent specs so
+// nothing changes on upgrade.
+func (c *Config) InstanceSpecs() ([]registry.Spec, error) {
+	raw := strings.TrimSpace(c.InstancesJSON)
+	if raw == "" && c.InstancesFile != "" {
+		b, err := os.ReadFile(c.InstancesFile)
+		if err != nil {
+			return nil, fmt.Errorf("read JOURNARR_INSTANCES_FILE: %w", err)
+		}
+		raw = strings.TrimSpace(string(b))
+	}
+	if raw != "" {
+		var specs []registry.Spec
+		if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+			return nil, fmt.Errorf("parse JOURNARR_INSTANCES: %w", err)
+		}
+		return specs, nil
+	}
+	return c.legacySpecs(), nil
+}
+
+// legacySpecs maps the flat per-service env vars onto instance specs, keeping
+// the historical instance IDs (== old service names) so service_health rows and
+// SSE keys are unchanged.
+func (c *Config) legacySpecs() []registry.Spec {
+	var specs []registry.Spec
+	add := func(spec registry.Spec) {
+		if spec.URL == "" {
+			return
+		}
+		specs = append(specs, spec)
+	}
+	add(registry.Spec{ID: "seerr", Kind: registry.KindSeerr, URL: c.SeerrURL, APIKey: c.SeerrAPIKey})
+	add(registry.Spec{ID: "sonarr", Kind: registry.KindSonarr, URL: c.SonarrURL, APIKey: c.SonarrAPIKey})
+	add(registry.Spec{ID: "radarr", Kind: registry.KindRadarr, URL: c.RadarrURL, APIKey: c.RadarrAPIKey})
+	add(registry.Spec{ID: "prowlarr", Kind: registry.KindProwlarr, URL: c.ProwlarrURL, APIKey: c.ProwlarrAPIKey})
+	add(registry.Spec{ID: "arrarr", Kind: registry.KindArrarr, URL: c.ArrarrURL, APIKey: c.ArrarrAPIKey})
+	add(registry.Spec{ID: "jellyfin", Kind: registry.KindJellyfin, URL: c.JellyfinURL, APIKey: c.JellyfinAPIKey,
+		Extra: map[string]string{"user_id": c.JellyfinUserID}})
+	// WAHA folds into the concierge tile: still health-checked, but ParentID
+	// hides its standalone tile and its status shows inside the concierge card.
+	// If concierge isn't configured, WAHA stands alone so its status isn't lost.
+	wahaParent := ""
+	if c.ConciergeURL != "" {
+		wahaParent = "concierge"
+	}
+	add(registry.Spec{ID: "waha", Kind: registry.KindWaha, URL: c.WahaURL, APIKey: c.WahaAPIKey, ParentID: wahaParent})
+	add(registry.Spec{ID: "concierge", Kind: registry.KindConcierge, URL: c.ConciergeURL})
+	return specs
+}
 
 func Load() (*Config, error) {
 	c := &Config{}

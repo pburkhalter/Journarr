@@ -20,16 +20,26 @@
 		}
 	}
 
-	// Stable display order: pipeline order, not alphabetical.
-	const order = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'concierge'];
+	// Tiles derive from the registry (order, label, folding). Instances with a
+	// parent_id (e.g. waha → concierge) are folded and not shown standalone.
+	// Falls back to the historical hardcoded order if /api/instances is absent.
+	const fallbackOrder = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'concierge'];
 
-	const sorted = $derived(
-		Object.values(live.services).sort((a, b) => {
-			const ia = order.indexOf(a.service);
-			const ib = order.indexOf(b.service);
-			return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-		})
-	);
+	const sorted = $derived.by(() => {
+		if (live.instances.length > 0) {
+			return live.instances
+				.filter((i) => !i.parent_id)
+				.map((i) => ({ health: live.services[i.id], label: i.label }))
+				.filter((x): x is { health: (typeof live.services)[string]; label: string } => !!x.health);
+		}
+		return Object.values(live.services)
+			.sort((a, b) => {
+				const ia = fallbackOrder.indexOf(a.service);
+				const ib = fallbackOrder.indexOf(b.service);
+				return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+			})
+			.map((health) => ({ health, label: undefined as string | undefined }));
+	});
 </script>
 
 <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -58,8 +68,8 @@
 	</div>
 {:else}
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-		{#each sorted as svc (svc.service)}
-			<ServiceCard service={svc} />
+		{#each sorted as x (x.health.service)}
+			<ServiceCard service={x.health} label={x.label} />
 		{/each}
 	</div>
 {/if}

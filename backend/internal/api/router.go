@@ -17,20 +17,22 @@ import (
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/ingest"
+	"github.com/pburkhalter/journarr/internal/registry"
 	"github.com/pburkhalter/journarr/internal/store"
 	"github.com/pburkhalter/journarr/internal/updates"
 )
 
 type Deps struct {
-	Store   *store.Store
-	Broker  *Broker
-	Auth    *auth.Auth
-	Ingest  *ingest.Handler // nil = no webhook ingestion
-	Actions *actions.Actions
-	Updates *updates.Checker // nil = no update checks
-	Log     *slog.Logger
-	Version string
-	Dist    fs.FS // built frontend; may be empty pre-build
+	Store    *store.Store
+	Broker   *Broker
+	Auth     *auth.Auth
+	Ingest   *ingest.Handler // nil = no webhook ingestion
+	Actions  *actions.Actions
+	Registry *registry.Registry
+	Updates  *updates.Checker // nil = no update checks
+	Log      *slog.Logger
+	Version  string
+	Dist     fs.FS // built frontend; may be empty pre-build
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -89,6 +91,36 @@ func NewRouter(d Deps) http.Handler {
 					out = append(out, s)
 				}
 				writeJSON(w, map[string]any{"services": out})
+			})
+			// Registry metadata: drives tile ordering/labels/folding in the UI,
+			// replacing the hardcoded service order array.
+			r.Get("/instances", func(w http.ResponseWriter, _ *http.Request) {
+				var meta []registry.InstanceMeta
+				if d.Registry != nil {
+					meta = d.Registry.Meta()
+				}
+				writeJSON(w, map[string]any{"instances": meta})
+			})
+			// Active pipeline stage catalog — the single source the frontend
+			// reads instead of re-declaring stages. Capability-gated stages
+			// (e.g. transcode) only appear when a providing instance exists.
+			r.Get("/stages", func(w http.ResponseWriter, req *http.Request) {
+				all, err := d.Store.ListStages(req.Context())
+				if err != nil {
+					httpError(w, d.Log, "list stages", err)
+					return
+				}
+				out := make([]store.Stage, 0, len(all))
+				for _, s := range all {
+					if !s.Active {
+						continue
+					}
+					if d.Registry != nil && !d.Registry.StageActive(s.Key) {
+						continue
+					}
+					out = append(out, s)
+				}
+				writeJSON(w, map[string]any{"stages": out})
 			})
 			r.Get("/stats", func(w http.ResponseWriter, req *http.Request) {
 				st, err := d.Store.FetchStats(req.Context())

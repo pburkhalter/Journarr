@@ -4,9 +4,11 @@
 	import { parseDetail, type ServiceHealth, type TorboxCreate } from '$lib/types';
 	import { cn, relativeTime, titleCase } from '$lib/utils';
 
-	let { service }: { service: ServiceHealth } = $props();
+	let { service, label }: { service: ServiceHealth; label?: string } = $props();
 
 	const detail = $derived(parseDetail(service));
+	// WAHA status folded into the concierge tile (no standalone WAHA tile).
+	const waha = $derived((detail['waha'] as string | undefined) ?? null);
 	const headroom = $derived((detail['torbox_create'] as TorboxCreate | undefined) ?? null);
 	const jobStates = $derived((detail['states'] as Record<string, number> | undefined) ?? null);
 	const sessions = $derived(
@@ -35,7 +37,7 @@
 		<div class="flex items-center gap-2.5">
 			<StatusDot status={service.status} />
 			<div>
-				<div class="text-sm font-medium leading-none">{titleCase(service.service)}</div>
+				<div class="text-sm font-medium leading-none">{label ?? titleCase(service.service)}</div>
 				<div class="mt-1 text-[11px] text-muted-foreground">
 					{#if service.version}v{service.version}{/if}
 					{#if serverName}
@@ -144,6 +146,21 @@
 					{s.name}: {s.status}
 				</span>
 			{/each}
+		</div>
+	{/if}
+
+	{#if waha}
+		<div class="mt-3 flex flex-wrap gap-1.5">
+			<span
+				class={cn(
+					'rounded-md px-2 py-0.5 text-[11px]',
+					waha.toLowerCase() === 'working' || waha.toLowerCase() === 'up'
+						? 'bg-success/15 text-success'
+						: 'bg-warning/15 text-warning'
+				)}
+			>
+				WhatsApp: {waha}
+			</span>
 		</div>
 	{/if}
 </div>

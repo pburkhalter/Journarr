@@ -1,5 +1,5 @@
-import { getMe, getServices } from './api';
-import type { Me, ServiceHealth } from './types';
+import { getInstances, getMe, getServices, getStages } from './api';
+import type { Instance, Me, ServiceHealth, Stage } from './types';
 
 /**
  * Live state fed by the SSE stream. Components read the runes directly;
@@ -8,6 +8,10 @@ import type { Me, ServiceHealth } from './types';
  */
 class LiveStore {
 	services = $state<Record<string, ServiceHealth>>({});
+	/** registry instances (tile order/label/fold); empty ⇒ fall back to hardcoded order */
+	instances = $state<Instance[]>([]);
+	/** active pipeline stage catalog; empty ⇒ fall back to the STAGES const */
+	stages = $state<Stage[]>([]);
 	connected = $state(false);
 	me = $state<Me | null>(null);
 	/** bumped on every pipeline change — pages refetch via $effect */
@@ -77,6 +81,18 @@ class LiveStore {
 			this.services = next;
 		} catch {
 			// backend unreachable; SSE onerror already flags it
+		}
+		// Instances + stages change rarely and are best-effort: an older backend
+		// without these endpoints leaves them empty and the UI falls back.
+		try {
+			this.instances = await getInstances();
+		} catch {
+			// keep fallback (hardcoded order)
+		}
+		try {
+			this.stages = await getStages();
+		} catch {
+			// keep fallback (STAGES const)
 		}
 	}
 }

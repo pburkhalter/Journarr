@@ -15,7 +15,7 @@ import (
 
 // HealthResult is the outcome of a single service probe.
 type HealthResult struct {
-	Status  string         // up | degraded | down
+	Status  string // up | degraded | down
 	Latency time.Duration
 	Version string
 	Detail  map[string]any // serialized into service_health.detail

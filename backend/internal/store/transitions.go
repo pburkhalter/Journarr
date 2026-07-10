@@ -8,13 +8,40 @@ import (
 )
 
 type StageTransition struct {
-	ID           int64     `json:"id"`
-	MediaItemID  int64     `json:"media_item_id"`
-	Cycle        int       `json:"cycle"`
-	Stage        string    `json:"stage"`
-	EnteredAt    time.Time `json:"entered_at"`
-	SourceEventID *int64   `json:"source_event_id,omitempty"`
-	Note         string    `json:"note,omitempty"`
+	ID            int64     `json:"id"`
+	MediaItemID   int64     `json:"media_item_id"`
+	Cycle         int       `json:"cycle"`
+	Stage         string    `json:"stage"`
+	EnteredAt     time.Time `json:"entered_at"`
+	SourceEventID *int64    `json:"source_event_id,omitempty"`
+	Note          string    `json:"note,omitempty"`
+}
+
+// Stage is one row of the pipeline stage catalog.
+type Stage struct {
+	Key     string `json:"key"`
+	Ordinal int    `json:"ordinal"`
+	Label   string `json:"label"`
+	Active  bool   `json:"active"`
+}
+
+// ListStages returns the full stage catalog ordered by ordinal. It is the
+// canonical stage enum; the frontend fetches it instead of re-declaring stages.
+func (s *Store) ListStages(ctx context.Context) ([]Stage, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, ordinal, label, active FROM stages ORDER BY ordinal`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Stage
+	for rows.Next() {
+		var st Stage
+		if err := rows.Scan(&st.Key, &st.Ordinal, &st.Label, &st.Active); err != nil {
+			return nil, err
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
 }
 
 // LoadStageOrdinals reads the stage catalog once at startup.

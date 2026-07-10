@@ -14,59 +14,16 @@ import (
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/api"
 	"github.com/pburkhalter/journarr/internal/auth"
-	"github.com/pburkhalter/journarr/internal/clients"
 	"github.com/pburkhalter/journarr/internal/config"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/logger"
 	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/poll"
+	"github.com/pburkhalter/journarr/internal/registry"
 	"github.com/pburkhalter/journarr/internal/store"
 	"github.com/pburkhalter/journarr/internal/updates"
 	"github.com/pburkhalter/journarr/internal/web"
 )
-
-// stack bundles the upstream API clients (nil = not configured).
-type stack struct {
-	Seerr     *clients.Seerr
-	Sonarr    *clients.Arr
-	Radarr    *clients.Arr
-	Prowlarr  *clients.Arr
-	Arrarr    *clients.Arrarr
-	Jellyfin  *clients.Jellyfin
-	Waha      *clients.Waha
-	Concierge *clients.Concierge
-}
-
-func buildStack(cfg *config.Config) *stack {
-	t := cfg.UpstreamTimeout
-	s := &stack{}
-	if cfg.SeerrURL != "" {
-		s.Seerr = clients.NewSeerr(cfg.SeerrURL, cfg.SeerrAPIKey, t)
-	}
-	if cfg.SonarrURL != "" {
-		s.Sonarr = clients.NewArr("sonarr", cfg.SonarrURL, "/api/v3", cfg.SonarrAPIKey, t)
-	}
-	if cfg.RadarrURL != "" {
-		s.Radarr = clients.NewArr("radarr", cfg.RadarrURL, "/api/v3", cfg.RadarrAPIKey, t)
-	}
-	if cfg.ProwlarrURL != "" {
-		s.Prowlarr = clients.NewArr("prowlarr", cfg.ProwlarrURL, "/api/v1", cfg.ProwlarrAPIKey, t)
-	}
-	if cfg.ArrarrURL != "" {
-		s.Arrarr = clients.NewArrarr(cfg.ArrarrURL, cfg.ArrarrAPIKey, t)
-	}
-	if cfg.JellyfinURL != "" {
-		s.Jellyfin = clients.NewJellyfin(cfg.JellyfinURL, cfg.JellyfinAPIKey, t)
-		s.Jellyfin.UserID = cfg.JellyfinUserID
-	}
-	if cfg.WahaURL != "" {
-		s.Waha = clients.NewWaha(cfg.WahaURL, cfg.WahaAPIKey, t)
-	}
-	if cfg.ConciergeURL != "" {
-		s.Concierge = clients.NewConcierge(cfg.ConciergeURL, t)
-	}
-	return s
-}
 
 var versionStr = "dev"
 
@@ -110,9 +67,25 @@ func run() error {
 	}
 
 	broker := api.NewBroker()
-	stk := buildStack(cfg)
 
-	checks := buildChecks(stk)
+	specs, err := cfg.InstanceSpecs()
+	if err != nil {
+		return err
+	}
+	reg, err := registry.Build(specs, cfg.UpstreamTimeout)
+	if err != nil {
+		return err
+	}
+	sonarr, radarr, seerr, jelly := reg.Sonarr(), reg.Radarr(), reg.Seerr(), reg.Jellyfin()
+
+	// Health checks derive from every instance that declares CapHealth and
+	// whose client implements the HealthChecker contract.
+	var checks []poll.Check
+	for _, inst := range reg.WithCapability(registry.CapHealth) {
+		if hc, ok := inst.Client.(registry.HealthChecker); ok {
+			checks = append(checks, poll.Check{Service: inst.ID, Fn: hc.CheckHealth})
+		}
+	}
 	if len(checks) == 0 {
 		log.Warn("no services configured — set SEERR_URL, SONARR_URL, … to monitor the stack")
 	} else {
@@ -128,7 +101,7 @@ func run() error {
 	}
 
 	// Pipeline: projector + ingestion + reconciling pollers.
-	projector := pipeline.New(st, log, broker.Publish, stk.Sonarr, stk.Radarr)
+	projector := pipeline.New(st, log, broker.Publish, sonarr, radarr)
 	go projector.Run(ctx)
 
 	var ing *ingest.Handler
@@ -139,40 +112,36 @@ func run() error {
 		log.Warn("JOURNARR_WEBHOOK_TOKEN not set — webhook ingestion disabled, pollers only")
 	}
 
-	if stk.Seerr != nil {
+	if seerr != nil {
 		go (&poll.SeerrRequestPoller{
-			Store: st, Log: log, Seerr: stk.Seerr,
+			Store: st, Log: log, Seerr: seerr,
 			Interval: cfg.SeerrPollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
-	var queueArrs []*clients.Arr
-	for _, arr := range []*clients.Arr{stk.Sonarr, stk.Radarr} {
-		if arr == nil {
-			continue
-		}
-		queueArrs = append(queueArrs, arr)
+	mediaArrs := reg.MediaArrs()
+	for _, arr := range mediaArrs {
 		go (&poll.ArrHistoryPoller{
 			Store: st, Log: log, Arr: arr,
 			Interval: cfg.HistoryPollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
-	if len(queueArrs) > 0 {
+	if len(mediaArrs) > 0 {
 		go (&poll.ArrQueuePoller{
-			Store: st, Log: log, Arrs: queueArrs,
+			Store: st, Log: log, Arrs: mediaArrs,
 			Interval: cfg.QueuePollInterval, Publish: broker.Publish,
 		}).Run(ctx)
 	}
-	if stk.Jellyfin != nil {
+	if jelly != nil {
 		go (&poll.JellyfinPoller{
-			Store: st, Log: log, Jelly: stk.Jellyfin,
+			Store: st, Log: log, Jelly: jelly,
 			Interval: cfg.JellyfinPollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
 	// Presence reconciler: advance already-on-disk (arr hasFile) items that
 	// pre-date Journarr or aged out of the Jellyfin recent window.
-	if stk.Sonarr != nil || stk.Radarr != nil {
+	if sonarr != nil || radarr != nil {
 		go (&poll.PresencePoller{
-			Store: st, Log: log, Sonarr: stk.Sonarr, Radarr: stk.Radarr,
+			Store: st, Log: log, Sonarr: sonarr, Radarr: radarr,
 			Interval: cfg.PresencePollInterval, Wake: projector.Wake,
 		}).Run(ctx)
 	}
@@ -211,7 +180,7 @@ func run() error {
 
 	acts := &actions.Actions{
 		Store: st, Log: log,
-		Sonarr: stk.Sonarr, Radarr: stk.Radarr, Seerr: stk.Seerr, Jelly: stk.Jellyfin,
+		Sonarr: sonarr, Radarr: radarr, Seerr: seerr, Jelly: jelly,
 		Wake: projector.Wake, Publish: broker.Publish,
 	}
 
@@ -220,7 +189,7 @@ func run() error {
 	// arrarr does (via /status.json version). concierge/journarr can be added
 	// here once they surface their version too.
 	updateRepos := map[string]string{}
-	if stk.Arrarr != nil {
+	if reg.Arrarr() != nil {
 		updateRepos["arrarr"] = "pburkhalter/arrarr"
 	}
 	var updateChecker *updates.Checker
@@ -258,15 +227,16 @@ func run() error {
 	}()
 
 	router := api.NewRouter(api.Deps{
-		Store:   st,
-		Broker:  broker,
-		Auth:    authn,
-		Ingest:  ing,
-		Actions: acts,
-		Updates: updateChecker,
-		Log:     log,
-		Version: versionStr,
-		Dist:    web.Dist(),
+		Store:    st,
+		Broker:   broker,
+		Auth:     authn,
+		Ingest:   ing,
+		Actions:  acts,
+		Registry: reg,
+		Updates:  updateChecker,
+		Log:      log,
+		Version:  versionStr,
+		Dist:     web.Dist(),
 	})
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -291,35 +261,6 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
-}
-
-func buildChecks(s *stack) []poll.Check {
-	var checks []poll.Check
-	if s.Seerr != nil {
-		checks = append(checks, poll.Check{Service: "seerr", Fn: s.Seerr.CheckHealth})
-	}
-	if s.Sonarr != nil {
-		checks = append(checks, poll.Check{Service: "sonarr", Fn: s.Sonarr.CheckHealth})
-	}
-	if s.Radarr != nil {
-		checks = append(checks, poll.Check{Service: "radarr", Fn: s.Radarr.CheckHealth})
-	}
-	if s.Prowlarr != nil {
-		checks = append(checks, poll.Check{Service: "prowlarr", Fn: s.Prowlarr.CheckHealth})
-	}
-	if s.Arrarr != nil {
-		checks = append(checks, poll.Check{Service: "arrarr", Fn: s.Arrarr.CheckHealth})
-	}
-	if s.Jellyfin != nil {
-		checks = append(checks, poll.Check{Service: "jellyfin", Fn: s.Jellyfin.CheckHealth})
-	}
-	if s.Waha != nil {
-		checks = append(checks, poll.Check{Service: "waha", Fn: s.Waha.CheckHealth})
-	}
-	if s.Concierge != nil {
-		checks = append(checks, poll.Check{Service: "concierge", Fn: s.Concierge.CheckHealth})
-	}
-	return checks
 }
 
 // healthcheck probes the local /healthz — used as the Docker HEALTHCHECK
