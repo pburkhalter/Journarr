@@ -67,7 +67,8 @@ func (r *Registry) firstArr(k Kind) *clients.Arr {
 }
 
 // Sonarr returns the first Sonarr client, or nil.
-func (r *Registry) Sonarr() *clients.Arr { return r.firstArr(KindSonarr) }
+func (r *Registry) Sonarr() *clients.Arr   { return r.firstArr(KindSonarr) }
+func (r *Registry) Prowlarr() *clients.Arr { return r.firstArr(KindProwlarr) }
 
 // Radarr returns the first Radarr client, or nil.
 func (r *Registry) Radarr() *clients.Arr { return r.firstArr(KindRadarr) }

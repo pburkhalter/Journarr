@@ -112,13 +112,6 @@ func (c *Concierge) CheckHealth(ctx context.Context) HealthResult {
 	if len(body.Issues) > 0 {
 		detail["issues"] = body.Issues
 	}
-	if body.SceneNZB.Cap > 0 {
-		detail["grab_quota"] = map[string]any{
-			"indexer": body.SceneNZB.Indexer,
-			"used":    body.SceneNZB.Used,
-			"cap":     body.SceneNZB.Cap,
-			"left":    body.SceneNZB.Left,
-		}
-	}
+	// SceneNZB grab-quota moved to the Prowlarr tile (Prowlarr is the source).
 	return HealthResult{Status: status, Latency: lat, Version: body.Version, Detail: detail}
 }

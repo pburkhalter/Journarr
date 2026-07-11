@@ -46,6 +46,9 @@ type Config struct {
 
 	ProwlarrURL    string `env:"PROWLARR_URL"`
 	ProwlarrAPIKey string `env:"PROWLARR_API_KEY"`
+	// SceneNZB grab-quota, shown on the Prowlarr tile (moved off concierge).
+	ProwlarrQuotaIndexer string `env:"PROWLARR_QUOTA_INDEXER" envDefault:"SceneNZB"`
+	ProwlarrDailyCap     int    `env:"PROWLARR_DAILY_CAP" envDefault:"400"`
 
 	ArrarrURL    string `env:"ARRARR_URL"`
 	ArrarrAPIKey string `env:"ARRARR_API_KEY"`

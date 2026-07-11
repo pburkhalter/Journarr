@@ -16,6 +16,11 @@ type Arr struct {
 	APIBase string // "/api/v3" or "/api/v1"
 	APIKey  string
 	HTTP    *http.Client
+
+	// Prowlarr grab-quota (SceneNZB): when QuotaIndexer is set, CheckHealth
+	// surfaces today's grabs vs the daily cap on the tile. Empty = disabled.
+	QuotaIndexer  string
+	QuotaDailyCap int
 }
 
 func NewArr(name, baseURL, apiBase, apiKey string, timeout time.Duration) *Arr {
@@ -81,7 +86,43 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 		}
 		res.Detail["health_messages"] = warnings
 	}
+	// Prowlarr: today's SceneNZB grab-quota headroom, surfaced on its own tile
+	// (the grabs come from Prowlarr, not arrarr/concierge).
+	if c.QuotaIndexer != "" {
+		if used, ok := c.indexerGrabsToday(ctx); ok {
+			left := c.QuotaDailyCap - used
+			if left < 0 {
+				left = 0
+			}
+			res.Detail["grab_quota"] = map[string]any{
+				"indexer": c.QuotaIndexer, "used": used, "cap": c.QuotaDailyCap, "left": left,
+			}
+		}
+	}
 	return res
+}
+
+// indexerGrabsToday returns today's grab count for QuotaIndexer from Prowlarr's
+// /indexerstats (UTC-day window). ok=false if the indexer isn't found or errors.
+func (c *Arr) indexerGrabsToday(ctx context.Context) (int, bool) {
+	midnight := time.Now().UTC().Truncate(24 * time.Hour)
+	url := fmt.Sprintf("%s%s/indexerstats?startDate=%s&endDate=%s", c.BaseURL, c.APIBase,
+		midnight.Format("2006-01-02T15:04:05Z"), time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	var out struct {
+		Indexers []struct {
+			IndexerName   string `json:"indexerName"`
+			NumberOfGrabs int    `json:"numberOfGrabs"`
+		} `json:"indexers"`
+	}
+	if _, err := getJSON(ctx, c.HTTP, url, c.headers(), &out); err != nil {
+		return 0, false
+	}
+	for _, ix := range out.Indexers {
+		if strings.EqualFold(ix.IndexerName, c.QuotaIndexer) {
+			return ix.NumberOfGrabs, true
+		}
+	}
+	return 0, false
 }
 
 // MovieRelease is Radarr's release/availability view of a movie — enough to

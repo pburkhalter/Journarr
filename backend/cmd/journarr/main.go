@@ -82,6 +82,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// SceneNZB grab-quota is a Prowlarr stat — surface it on the Prowlarr tile.
+	if p := reg.Prowlarr(); p != nil && cfg.ProwlarrQuotaIndexer != "" {
+		p.QuotaIndexer = cfg.ProwlarrQuotaIndexer
+		p.QuotaDailyCap = cfg.ProwlarrDailyCap
+	}
 	sonarr, radarr, seerr, jelly := reg.Sonarr(), reg.Radarr(), reg.Seerr(), reg.Jellyfin()
 
 	// Health checks derive from every instance that declares CapHealth and
