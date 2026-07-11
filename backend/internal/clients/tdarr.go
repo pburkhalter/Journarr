@@ -41,6 +41,11 @@ type tdarrNode struct {
 }
 
 func (c *Tdarr) CheckHealth(ctx context.Context) HealthResult {
+	// Version + reachability from /api/v2/status.
+	var st struct {
+		Version string `json:"version"`
+	}
+	_, _ = getJSON(ctx, c.HTTP, c.BaseURL+"/api/v2/status", nil, &st)
 	// get-nodes returns the worker-node map on modern Tdarr, including each
 	// worker's current file + progress — that's the live "what is it doing".
 	var nodes map[string]tdarrNode
@@ -67,7 +72,7 @@ func (c *Tdarr) CheckHealth(ctx context.Context) HealthResult {
 		if len(transcodes) > 0 {
 			detail["transcodes"] = transcodes
 		}
-		return HealthResult{Status: "up", Latency: lat, Detail: detail}
+		return HealthResult{Status: "up", Latency: lat, Version: st.Version, Detail: detail}
 	}
 	// Tdarr versions differ — fall back to a plain reachability probe on the
 	// web root, which answers whenever the server is up.
@@ -99,21 +104,37 @@ func (c *Tdarr) Rescan(ctx context.Context) error {
 }
 
 // SetTranscodeWorkers sets the GPU + CPU transcode worker limits on every node
-// (0 = pause transcoding, ≥1 = run). Used by the pause/resume action.
+// (0 = pause transcoding, ≥1 = run) by nudging Tdarr's alter-worker-limit
+// endpoint up/down to the target. Used by the pause/resume action.
 func (c *Tdarr) SetTranscodeWorkers(ctx context.Context, gpu, cpu int) error {
 	var nodes map[string]tdarrNode
 	if _, err := getJSON(ctx, c.HTTP, c.BaseURL+"/api/v2/get-nodes", nil, &nodes); err != nil {
 		return err
 	}
-	for id := range nodes {
-		for typ, n := range map[string]int{"transcodegpu": gpu, "transcodecpu": cpu} {
-			body := map[string]any{"data": map[string]any{
-				"nodeID": id, "process": typ, "workerType": "adjustworkers",
-				"adjustment": nil, "target": n,
-			}}
-			if err := c.post(ctx, "/api/v2/update-node-workers", body, nil); err != nil {
-				return err
-			}
+	for id, n := range nodes {
+		if err := c.adjustWorker(ctx, id, "transcodegpu", n.WorkerLimits.TranscodeGPU, gpu); err != nil {
+			return err
+		}
+		if err := c.adjustWorker(ctx, id, "transcodecpu", n.WorkerLimits.TranscodeCPU, cpu); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// adjustWorker steps a node's worker limit toward target one at a time.
+func (c *Tdarr) adjustWorker(ctx context.Context, nodeID, workerType string, current, target int) error {
+	dir := "increase"
+	steps := target - current
+	if steps < 0 {
+		dir, steps = "decrease", -steps
+	}
+	for i := 0; i < steps; i++ {
+		body := map[string]any{"data": map[string]any{
+			"nodeID": nodeID, "process": dir, "workerType": workerType,
+		}}
+		if err := c.post(ctx, "/api/v2/alter-worker-limit", body, nil); err != nil {
+			return err
 		}
 	}
 	return nil

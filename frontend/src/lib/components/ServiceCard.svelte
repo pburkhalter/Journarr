@@ -37,12 +37,11 @@
 	);
 	const stuckJobs = $derived(detail['stuck_jobs'] as number | undefined);
 	const unflushed = $derived(detail['unflushed'] as number | undefined);
-	// tdarr: live transcode activity + whether a GPU worker is enabled
+	// tdarr: live transcode activity (only rendered while it's actually working)
 	const transcodes = $derived(
 		(detail['transcodes'] as { file: string; percentage: number; fps: number; eta: string }[] | undefined) ??
 			null
 	);
-	const gpuWorkers = $derived(detail['gpu_workers'] as number | undefined);
 
 	const badge: Record<string, string> = {
 		up: 'bg-success/15 text-success',
@@ -226,7 +225,5 @@
 				</div>
 			{/each}
 		</div>
-	{:else if gpuWorkers === 0 && service.service === 'tdarr'}
-		<div class="mt-3 border-t border-border/60 pt-3 text-[11px] text-warning">⚠ kein GPU-Worker aktiv — transkodiert nicht</div>
 	{/if}
 </div>
