@@ -76,6 +76,24 @@ export function stageIndex(key: string): number {
 	return STAGES.findIndex((s) => s.key === key);
 }
 
+export interface JellySession {
+	user: string;
+	client: string;
+	device: string;
+	title: string;
+	media_type: string;
+	position_sec: number;
+	runtime_sec: number;
+	paused: boolean;
+	play_method: string; // DirectPlay | DirectStream | Transcode
+	remote_ip?: string;
+}
+
+export interface SessionsResponse {
+	sessions: JellySession[];
+	safe_to_restart: boolean;
+}
+
 export interface RequestRollup {
 	id: number;
 	seerr_request_id?: number;

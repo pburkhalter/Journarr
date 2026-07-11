@@ -22,6 +22,7 @@ const (
 	CapRetry          Capability = "retry"           // re-grab a failed item
 	CapCancel         Capability = "cancel"          // cancel a request end-to-end
 	CapLibraryScan    Capability = "library-scan"    // jellyfin: RefreshLibrary
+	CapNowPlaying     Capability = "now-playing"     // jellyfin: active playback sessions
 	CapTranscodeStage Capability = "transcode-stage" // tdarr: drives the transcode stage
 	CapNotifySend     Capability = "notify-send"     // concierge: outbound notification send
 )
@@ -56,7 +57,7 @@ func defaultCaps(k Kind) []Capability {
 	case KindArrarr:
 		return []Capability{CapHealth, CapIngestSource}
 	case KindJellyfin:
-		return []Capability{CapHealth, CapLibraryScan}
+		return []Capability{CapHealth, CapLibraryScan, CapNowPlaying}
 	case KindSeerr:
 		return []Capability{CapHealth, CapIngestSource}
 	case KindWaha:

@@ -16,6 +16,7 @@ import (
 
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/auth"
+	"github.com/pburkhalter/journarr/internal/clients"
 	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/registry"
@@ -131,6 +132,26 @@ func NewRouter(d Deps) http.Handler {
 					out = append(out, s)
 				}
 				writeJSON(w, map[string]any{"stages": out})
+			})
+			// Live Jellyfin playback sessions — "who's streaming / safe to
+			// restart?". Derives from the registered Jellyfin instance
+			// (CapNowPlaying); nothing hardcoded.
+			r.Get("/sessions", func(w http.ResponseWriter, req *http.Request) {
+				sessions := []clients.JellySession{}
+				if d.Registry != nil {
+					if jf := d.Registry.Jellyfin(); jf != nil {
+						s, err := jf.Sessions(req.Context())
+						if err != nil {
+							httpError(w, d.Log, "jellyfin sessions", err)
+							return
+						}
+						sessions = s
+					}
+				}
+				writeJSON(w, map[string]any{
+					"sessions":        sessions,
+					"safe_to_restart": len(sessions) == 0,
+				})
 			})
 			// Control-plane settings (Flow menu).
 			r.Get("/flow", func(w http.ResponseWriter, req *http.Request) {

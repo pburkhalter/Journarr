@@ -6,6 +6,7 @@ import type {
 	RequestDetail,
 	RequestRollup,
 	ServiceHealth,
+	SessionsResponse,
 	Stage,
 	Stats
 } from './types';
@@ -33,6 +34,10 @@ export async function getServices(): Promise<ServiceHealth[]> {
 export async function getInstances(): Promise<Instance[]> {
 	const body = await get<{ instances: Instance[] }>('/api/instances');
 	return body.instances ?? [];
+}
+
+export async function getSessions(): Promise<SessionsResponse> {
+	return get<SessionsResponse>('/api/sessions');
 }
 
 export async function getStages(): Promise<Stage[]> {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { jellyfinScan } from '$lib/api';
+	import NowPlaying from '$lib/components/NowPlaying.svelte';
 	import ServiceCard from '$lib/components/ServiceCard.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
@@ -58,6 +59,8 @@
 		</button>
 	</div>
 </div>
+
+<NowPlaying />
 
 {#if sorted.length === 0}
 	<div class="max-w-xl rounded-lg border border-dashed border-border py-16 text-center">

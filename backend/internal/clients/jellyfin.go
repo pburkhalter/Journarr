@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -133,4 +134,72 @@ func (c *Jellyfin) CheckHealth(ctx context.Context) HealthResult {
 		Version: body.Version,
 		Detail:  map[string]any{"server_name": body.ServerName},
 	}
+}
+
+// JellySession is one active Jellyfin playback session (someone streaming).
+type JellySession struct {
+	User        string `json:"user"`
+	Client      string `json:"client"`
+	Device      string `json:"device"`
+	Title       string `json:"title"`
+	MediaType   string `json:"media_type"` // Movie|Episode|Audio|...
+	PositionSec int64  `json:"position_sec"`
+	RuntimeSec  int64  `json:"runtime_sec"`
+	Paused      bool   `json:"paused"`
+	PlayMethod  string `json:"play_method"` // DirectPlay|DirectStream|Transcode
+	RemoteIP    string `json:"remote_ip,omitempty"`
+}
+
+// Sessions returns the currently-playing Jellyfin sessions (those with a
+// NowPlayingItem) — powers the "who's streaming / safe to restart" view. It
+// derives entirely from the registered Jellyfin instance; nothing hardcoded.
+func (c *Jellyfin) Sessions(ctx context.Context) ([]JellySession, error) {
+	var raw []struct {
+		UserName       string `json:"UserName"`
+		Client         string `json:"Client"`
+		DeviceName     string `json:"DeviceName"`
+		RemoteEndPoint string `json:"RemoteEndPoint"`
+		NowPlayingItem *struct {
+			Name              string `json:"Name"`
+			Type              string `json:"Type"`
+			SeriesName        string `json:"SeriesName"`
+			ParentIndexNumber *int   `json:"ParentIndexNumber"`
+			IndexNumber       *int   `json:"IndexNumber"`
+			RunTimeTicks      int64  `json:"RunTimeTicks"`
+		} `json:"NowPlayingItem"`
+		PlayState struct {
+			PositionTicks int64  `json:"PositionTicks"`
+			IsPaused      bool   `json:"IsPaused"`
+			PlayMethod    string `json:"PlayMethod"`
+		} `json:"PlayState"`
+	}
+	// ActiveWithinSeconds trims idle clients; only NowPlaying sessions matter.
+	if _, err := getJSON(ctx, c.HTTP, c.BaseURL+"/Sessions?ActiveWithinSeconds=960", c.headers(), &raw); err != nil {
+		return nil, err
+	}
+	out := []JellySession{}
+	for _, s := range raw {
+		np := s.NowPlayingItem
+		if np == nil {
+			continue // idle client, not streaming
+		}
+		title := np.Name
+		if np.Type == "Episode" && np.SeriesName != "" {
+			se := ""
+			if np.ParentIndexNumber != nil && np.IndexNumber != nil {
+				se = fmt.Sprintf(" S%02dE%02d", *np.ParentIndexNumber, *np.IndexNumber)
+			}
+			title = fmt.Sprintf("%s%s — %s", np.SeriesName, se, np.Name)
+		}
+		out = append(out, JellySession{
+			User: s.UserName, Client: s.Client, Device: s.DeviceName,
+			Title: title, MediaType: np.Type,
+			PositionSec: s.PlayState.PositionTicks / 10_000_000,
+			RuntimeSec:  np.RunTimeTicks / 10_000_000,
+			Paused:      s.PlayState.IsPaused,
+			PlayMethod:  s.PlayState.PlayMethod,
+			RemoteIP:    s.RemoteEndPoint,
+		})
+	}
+	return out, nil
 }
