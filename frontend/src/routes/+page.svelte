@@ -13,14 +13,13 @@
 	// Sequence guard: a slow older response must never overwrite a newer one.
 	let seq = 0;
 
-	// "waiting" (unreleased movies) is a client-side split of the server's
-	// active set — Active shows only what's truly in flight, Waiting the rest.
-	const serverStatus = (f: string) => (f === 'waiting' ? 'active' : f);
-
+	// The server owns the waiting split: "waiting" returns anything with a
+	// future release date (unreleased movies + TV series awaiting their next
+	// episode), and excludes those from active/done.
 	async function load(f: string, q: string) {
 		const mySeq = ++seq;
 		try {
-			const result = await getRequests(serverStatus(f), q.trim());
+			const result = await getRequests(f, q.trim());
 			if (mySeq === seq) {
 				requests = result;
 				loaded = true;
@@ -30,11 +29,7 @@
 		}
 	}
 
-	const visible = $derived.by(() => {
-		if (filter === 'active') return requests.filter((r) => !r.awaiting_release_at);
-		if (filter === 'waiting') return requests.filter((r) => r.awaiting_release_at);
-		return requests;
-	});
+	const visible = $derived(requests);
 
 	// initial + live refresh (debounced tick from SSE) + filter changes.
 	// `query` is intentionally NOT read here — the search box has its own
@@ -95,7 +90,7 @@
 		</div>
 		<p class="mt-1 max-w-sm text-xs text-muted-foreground">
 			{#if filter === 'waiting'}
-				Requested movies not yet released show up here until their release date.
+				Movies not yet released and series awaiting their next episode show up here until their air date.
 			{:else}
 				New Seerr requests and arr grabs appear here automatically, live.
 			{/if}

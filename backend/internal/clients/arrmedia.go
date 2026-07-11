@@ -16,10 +16,12 @@ import (
 // Prowlarr never calls these.
 
 type Series struct {
-	ID        int64  `json:"id"`
-	Title     string `json:"title"`
-	TvdbID    int64  `json:"tvdbId"`
-	TitleSlug string `json:"titleSlug"`
+	ID         int64  `json:"id"`
+	Title      string `json:"title"`
+	TvdbID     int64  `json:"tvdbId"`
+	TitleSlug  string `json:"titleSlug"`
+	Status     string `json:"status"`     // continuing | ended | upcoming
+	NextAiring string `json:"nextAiring"` // ISO8601 of the next unaired monitored episode (empty if none)
 }
 
 type Episode struct {

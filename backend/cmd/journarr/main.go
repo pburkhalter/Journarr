@@ -167,6 +167,14 @@ func run() error {
 			Interval: time.Hour, Publish: broker.Publish,
 		}).Run(ctx)
 	}
+	// TV analog: flag series whose next episode/season hasn't aired yet (and
+	// which aren't actively downloading) as "waiting for release".
+	if sonarr != nil {
+		go (&poll.TVWaitingPoller{
+			Store: st, Log: log, Sonarr: sonarr,
+			Interval: time.Hour, Publish: broker.Publish,
+		}).Run(ctx)
+	}
 
 	// Daily events reaper.
 	go func() {

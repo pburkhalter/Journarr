@@ -160,12 +160,20 @@ type RequestRollup struct {
 func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offset int) ([]RequestRollup, error) {
 	query := reqSelect + ` WHERE 1=1`
 	args := []any{}
+	// A request is "waiting" if it (or one of its items) carries a future
+	// release date. Waiting requests surface ONLY in the Waiting view — excluded
+	// from Active and Done so they don't clutter what's actionable/finished.
+	awaiting := `(requests.awaiting_release_at IS NOT NULL OR EXISTS (
+		SELECT 1 FROM media_items mi WHERE mi.request_id = requests.id
+		AND mi.awaiting_release_at IS NOT NULL))`
 	switch status {
 	case "", "all":
+	case "waiting":
+		query += ` AND ` + awaiting
 	case "done":
-		query += ` AND status IN ('completed','canceled','failed')`
+		query += ` AND status IN ('completed','canceled','failed') AND NOT ` + awaiting
 	default:
-		query += ` AND status = ?`
+		query += ` AND status = ? AND NOT ` + awaiting
 		args = append(args, status)
 	}
 	if q != "" {
@@ -269,11 +277,15 @@ func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[st
 		ORDER BY updated_at DESC LIMIT 1`, requestID).Scan(&lastErr)
 	_ = s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM media_items WHERE request_id = ? AND stuck_since IS NOT NULL`, requestID).Scan(&stuck)
-	// The soonest expected release date among items still waiting on one.
+	// Waiting-for-release date: the request-level stamp (tv next-airing) wins,
+	// else the soonest awaiting item (movies).
 	var awaitAt sql.NullTime
 	_ = s.db.QueryRowContext(ctx, `
-		SELECT MIN(awaiting_release_at) FROM media_items
-		WHERE request_id = ? AND awaiting_release_at IS NOT NULL`, requestID).Scan(&awaitAt)
+		SELECT COALESCE(
+			(SELECT awaiting_release_at FROM requests WHERE id = ?),
+			(SELECT MIN(awaiting_release_at) FROM media_items
+				WHERE request_id = ? AND awaiting_release_at IS NOT NULL))`,
+		requestID, requestID).Scan(&awaitAt)
 	if awaitAt.Valid {
 		awaiting = &awaitAt.Time
 	}

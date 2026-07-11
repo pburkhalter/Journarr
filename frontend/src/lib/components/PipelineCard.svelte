@@ -39,6 +39,11 @@
 			? 'date TBA'
 			: awaitingDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
 	);
+	// Movies are literally unreleased; a series is usually awaiting its next
+	// episode/season, so word the badge accordingly.
+	const awaitingText = $derived(
+		request.media_type === 'tv' ? 'waiting for next episode' : 'waiting for release'
+	);
 </script>
 
 <a
@@ -75,9 +80,9 @@
 				{#if awaiting}
 					<span
 						class="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-						title="Not released yet — expected {awaitingLabel}"
+						title="Not out yet — expected {awaitingLabel}"
 					>
-						🕗 waiting for release
+						🕗 {awaitingText}
 					</span>
 				{:else}
 					{#if request.stuck_count > 0}
