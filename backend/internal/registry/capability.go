@@ -22,9 +22,11 @@ const (
 	CapRetry          Capability = "retry"           // re-grab a failed item
 	CapCancel         Capability = "cancel"          // cancel a request end-to-end
 	CapLibraryScan    Capability = "library-scan"    // jellyfin: RefreshLibrary
-	CapNowPlaying     Capability = "now-playing"     // jellyfin: active playback sessions
-	CapTranscodeStage Capability = "transcode-stage" // tdarr: drives the transcode stage
-	CapNotifySend     Capability = "notify-send"     // concierge: outbound notification send
+	CapNowPlaying     Capability = "now-playing"      // jellyfin: active playback sessions
+	CapTranscodeStage Capability = "transcode-stage"  // tdarr: drives the transcode stage
+	CapTranscodeScan  Capability = "transcode-scan"   // tdarr: rescan libraries
+	CapTranscodePause Capability = "transcode-pause"  // tdarr: pause/resume transcode workers
+	CapNotifySend     Capability = "notify-send"      // concierge: outbound notification send
 )
 
 // Kind is the concrete integration type an instance is built from.
@@ -65,7 +67,7 @@ func defaultCaps(k Kind) []Capability {
 	case KindConcierge:
 		return []Capability{CapHealth, CapIngestSource, CapNotifySend}
 	case KindTdarr:
-		return []Capability{CapHealth, CapTranscodeStage, CapIngestSource}
+		return []Capability{CapHealth, CapTranscodeStage, CapIngestSource, CapTranscodeScan, CapTranscodePause}
 	case KindJournarr:
 		return []Capability{CapHealth}
 	default:

@@ -126,3 +126,13 @@ func (r *Registry) Concierge() *clients.Concierge {
 	}
 	return nil
 }
+
+// Tdarr returns the first tdarr client, or nil.
+func (r *Registry) Tdarr() *clients.Tdarr {
+	for _, i := range r.ByKind(KindTdarr) {
+		if c, ok := i.Client.(*clients.Tdarr); ok {
+			return c
+		}
+	}
+	return nil
+}

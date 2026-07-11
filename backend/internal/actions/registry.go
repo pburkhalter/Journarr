@@ -44,6 +44,22 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 				Kind: "library-scan", Scope: "global", InstanceID: inst.ID,
 			})
 		}
+		for _, inst := range a.Reg.WithCapability(registry.CapTranscodeScan) {
+			out = append(out, Descriptor{
+				ID: "transcode-scan:" + inst.ID, Label: inst.Label + " rescan",
+				Kind: "transcode-scan", Scope: "global", InstanceID: inst.ID,
+			})
+		}
+		for _, inst := range a.Reg.WithCapability(registry.CapTranscodePause) {
+			out = append(out, Descriptor{
+				ID: "transcode-pause:" + inst.ID, Label: "Pause " + inst.Label,
+				Kind: "transcode-pause", Scope: "global", InstanceID: inst.ID,
+			})
+			out = append(out, Descriptor{
+				ID: "transcode-resume:" + inst.ID, Label: "Resume " + inst.Label,
+				Kind: "transcode-resume", Scope: "global", InstanceID: inst.ID,
+			})
+		}
 	case "request":
 		req, _ := a.Store.GetRequest(ctx, targetID)
 		if req == nil {
@@ -86,6 +102,12 @@ func (a *Actions) Execute(ctx context.Context, kind string, params map[string]an
 		return a.SearchMissing(ctx, pStr(params, "instance_id"))
 	case "library-scan":
 		return a.JellyfinScan(ctx)
+	case "transcode-scan":
+		return a.TdarrRescan(ctx)
+	case "transcode-pause":
+		return a.TdarrWorkers(ctx, 0)
+	case "transcode-resume":
+		return a.TdarrWorkers(ctx, 1)
 	case "cancel":
 		return a.Cancel(ctx, pInt(params, "request_id"))
 	case "retry":

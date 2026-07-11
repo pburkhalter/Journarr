@@ -68,6 +68,27 @@ func (a *Actions) JellyfinScan(ctx context.Context) error {
 	return a.finish(ctx, id, a.Jelly.RefreshLibrary(ctx))
 }
 
+// TdarrRescan re-scans every Tdarr library for new/changed files.
+func (a *Actions) TdarrRescan(ctx context.Context) error {
+	id, _ := a.Store.InsertAction(ctx, "transcode_scan", "", 0)
+	t := a.Reg.Tdarr()
+	if t == nil {
+		return a.finish(ctx, id, fmt.Errorf("tdarr not configured"))
+	}
+	return a.finish(ctx, id, t.Rescan(ctx))
+}
+
+// TdarrWorkers sets Tdarr's transcode worker limit on every node — 0 pauses
+// transcoding, ≥1 resumes it.
+func (a *Actions) TdarrWorkers(ctx context.Context, gpu int) error {
+	id, _ := a.Store.InsertAction(ctx, "transcode_workers", "", 0)
+	t := a.Reg.Tdarr()
+	if t == nil {
+		return a.finish(ctx, id, fmt.Errorf("tdarr not configured"))
+	}
+	return a.finish(ctx, id, t.SetTranscodeWorkers(ctx, gpu, 0))
+}
+
 // Retry cancels the item's in-flight download(s) (blocklisting the bad
 // release) and re-searches. A season pack is ONE download linked to many
 // episodes, so retrying one episode re-searches every sibling that share the

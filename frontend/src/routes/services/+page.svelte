@@ -1,9 +1,24 @@
 <script lang="ts">
-	import { jellyfinScan } from '$lib/api';
-	import NowPlaying from '$lib/components/NowPlaying.svelte';
+	import { getSessions, jellyfinScan } from '$lib/api';
 	import ServiceCard from '$lib/components/ServiceCard.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
+	import type { JellySession } from '$lib/types';
+
+	// Live Jellyfin now-playing, folded into the Jellyfin tile (no separate card).
+	let streams = $state<JellySession[]>([]);
+	$effect(() => {
+		const load = async () => {
+			try {
+				streams = (await getSessions()).sessions;
+			} catch {
+				// jellyfin unreachable — the tile status shows it
+			}
+		};
+		void load();
+		const t = setInterval(load, 8000);
+		return () => clearInterval(t);
+	});
 
 	let scanning = $state(false);
 	let scanMsg = $state('');
@@ -60,8 +75,6 @@
 	</div>
 </div>
 
-<NowPlaying />
-
 {#if sorted.length === 0}
 	<div class="max-w-xl rounded-lg border border-dashed border-border py-16 text-center">
 		<div class="text-sm font-medium">No services configured</div>
@@ -72,7 +85,11 @@
 {:else}
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
 		{#each sorted as x (x.health.service)}
-			<ServiceCard service={x.health} label={x.label} />
+			<ServiceCard
+				service={x.health}
+				label={x.label}
+				streams={x.health.service === 'jellyfin' ? streams : undefined}
+			/>
 		{/each}
 	</div>
 {/if}

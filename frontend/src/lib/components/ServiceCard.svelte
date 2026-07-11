@@ -1,10 +1,19 @@
 <script lang="ts">
 	import HeadroomMeter from '$lib/components/HeadroomMeter.svelte';
 	import StatusDot from '$lib/components/StatusDot.svelte';
-	import { parseDetail, type ServiceHealth, type TorboxCreate } from '$lib/types';
+	import { parseDetail, type JellySession, type ServiceHealth, type TorboxCreate } from '$lib/types';
 	import { cn, relativeTime, titleCase } from '$lib/utils';
 
-	let { service, label }: { service: ServiceHealth; label?: string } = $props();
+	// `streams` = live Jellyfin now-playing (passed in for the Jellyfin tile only).
+	let { service, label, streams }: { service: ServiceHealth; label?: string; streams?: JellySession[] } =
+		$props();
+
+	function fmtDur(sec: number): string {
+		const s = Math.max(0, Math.floor(sec));
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${m}:${String(s % 60).padStart(2, '0')}`;
+	}
 
 	// Normalize the reported version: some services (e.g. arrarr) already prefix
 	// a "v", and we add our own — strip theirs so we never render "vv3.1.4".
@@ -28,6 +37,12 @@
 	);
 	const stuckJobs = $derived(detail['stuck_jobs'] as number | undefined);
 	const unflushed = $derived(detail['unflushed'] as number | undefined);
+	// tdarr: live transcode activity + whether a GPU worker is enabled
+	const transcodes = $derived(
+		(detail['transcodes'] as { file: string; percentage: number; fps: number; eta: string }[] | undefined) ??
+			null
+	);
+	const gpuWorkers = $derived(detail['gpu_workers'] as number | undefined);
 
 	const badge: Record<string, string> = {
 		up: 'bg-success/15 text-success',
@@ -166,5 +181,52 @@
 				WhatsApp: {waha}
 			</span>
 		</div>
+	{/if}
+
+	{#if streams && streams.length > 0}
+		<div class="mt-3 space-y-2 border-t border-border/60 pt-3">
+			<div class="text-[11px] font-medium text-muted-foreground">Now Playing</div>
+			{#each streams as s (s.user + s.device + s.title)}
+				<div>
+					<div class="flex items-start justify-between gap-2">
+						<div class="min-w-0 text-[12px]">
+							<span class="text-muted-foreground">{s.paused ? '⏸' : '▶'}</span>
+							{s.title}
+							<span class="text-[11px] text-muted-foreground">· {s.user} · {s.device || s.client}</span>
+						</div>
+						{#if s.play_method === 'Transcode'}
+							<span class="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">⚙ Transcode</span>
+						{/if}
+					</div>
+					{#if s.runtime_sec > 0}
+						<div class="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+							<div class="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+								<div class="h-full rounded-full bg-info" style="width: {Math.min(100, (s.position_sec / s.runtime_sec) * 100)}%"></div>
+							</div>
+							<span class="shrink-0 tabular-nums">{fmtDur(s.position_sec)} / {fmtDur(s.runtime_sec)}</span>
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	{/if}
+
+	{#if transcodes && transcodes.length > 0}
+		<div class="mt-3 space-y-2 border-t border-border/60 pt-3">
+			<div class="text-[11px] font-medium text-muted-foreground">Transcoding</div>
+			{#each transcodes as t (t.file)}
+				<div>
+					<div class="truncate text-[12px]" title={t.file}>{t.file}</div>
+					<div class="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+						<div class="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+							<div class="h-full rounded-full bg-primary" style="width: {Math.min(100, t.percentage || 0)}%"></div>
+						</div>
+						<span class="shrink-0 tabular-nums">{Math.round(t.percentage || 0)}%{#if t.fps} · {Math.round(t.fps)} fps{/if}{#if t.eta} · {t.eta}{/if}</span>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{:else if gpuWorkers === 0 && service.service === 'tdarr'}
+		<div class="mt-3 border-t border-border/60 pt-3 text-[11px] text-warning">⚠ kein GPU-Worker aktiv — transkodiert nicht</div>
 	{/if}
 </div>
