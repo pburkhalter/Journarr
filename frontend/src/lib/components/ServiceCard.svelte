@@ -42,6 +42,17 @@
 		(detail['transcodes'] as { file: string; percentage: number; fps: number; eta: string }[] | undefined) ??
 			null
 	);
+	// arrarr: live per-item downloads (only rendered while something's in flight).
+	// arrarr has no byte-level progress, so we show the coarse state, not a %.
+	const downloads = $derived(
+		(detail['downloads'] as { title: string; state: string }[] | undefined) ?? null
+	);
+	const downloadCount = $derived((detail['download_count'] as number | undefined) ?? 0);
+	const dlBadge: Record<string, string> = {
+		downloading: 'bg-info/15 text-info',
+		importing: 'bg-primary/15 text-primary',
+		queued: 'bg-muted text-muted-foreground'
+	};
 
 	const badge: Record<string, string> = {
 		up: 'bg-success/15 text-success',
@@ -222,6 +233,25 @@
 						</div>
 						<span class="shrink-0 tabular-nums">{Math.round(t.percentage || 0)}%{#if t.fps} · {Math.round(t.fps)} fps{/if}{#if t.eta} · {t.eta}{/if}</span>
 					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
+	{#if downloads && downloads.length > 0}
+		<div class="mt-3 space-y-2 border-t border-border/60 pt-3">
+			<div class="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+				<span>Downloads</span>
+				{#if downloadCount > downloads.length}
+					<span class="font-normal">showing {downloads.length} of {downloadCount}</span>
+				{/if}
+			</div>
+			{#each downloads as d, i (d.title + i)}
+				<div class="flex items-start justify-between gap-2">
+					<div class="min-w-0 truncate text-[12px]" title={d.title}>{d.title}</div>
+					<span class={cn('shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', dlBadge[d.state] ?? 'bg-muted text-muted-foreground')}>
+						{d.state}
+					</span>
 				</div>
 			{/each}
 		</div>
