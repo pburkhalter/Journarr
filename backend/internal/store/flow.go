@@ -10,6 +10,23 @@ import (
 // correct (the driver's default time.Time serialization is not comparable).
 func sqliteTime(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05") }
 
+// parseSQLiteTime is the inverse of sqliteTime. It's needed whenever a datetime
+// comes back through a SQL expression (MIN(), COALESCE(), …): modernc.org/sqlite
+// only maps a *declared-type* column to time.Time, so expression results arrive
+// as a raw string and scanning them straight into sql.NullTime fails (leaving a
+// bogus zero time). Parse the string ourselves instead.
+func parseSQLiteTime(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04:05.999999999", time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
 // FlowSettings are the control-plane toggles. Defaults reproduce today's
 // behavior (everything Journarr-owned is off).
 func (s *Store) GetFlowSettings(ctx context.Context) (map[string]string, error) {

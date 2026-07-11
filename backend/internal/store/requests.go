@@ -278,16 +278,20 @@ func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[st
 	_ = s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM media_items WHERE request_id = ? AND stuck_since IS NOT NULL`, requestID).Scan(&stuck)
 	// Waiting-for-release date: the request-level stamp (tv next-airing) wins,
-	// else the soonest awaiting item (movies).
-	var awaitAt sql.NullTime
+	// else the soonest awaiting item (movies). Scanned as a string, not
+	// sql.NullTime — this is a COALESCE/MIN expression, so the driver returns a
+	// raw string (see parseSQLiteTime).
+	var awaitStr sql.NullString
 	_ = s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(
 			(SELECT awaiting_release_at FROM requests WHERE id = ?),
 			(SELECT MIN(awaiting_release_at) FROM media_items
 				WHERE request_id = ? AND awaiting_release_at IS NOT NULL))`,
-		requestID, requestID).Scan(&awaitAt)
-	if awaitAt.Valid {
-		awaiting = &awaitAt.Time
+		requestID, requestID).Scan(&awaitStr)
+	if awaitStr.Valid {
+		if t, ok := parseSQLiteTime(awaitStr.String); ok {
+			awaiting = &t
+		}
 	}
 	return counts, total, lastErr.String, stuck, awaiting, nil
 }

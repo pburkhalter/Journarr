@@ -34,8 +34,11 @@
 		request.awaiting_release_at ? new Date(request.awaiting_release_at) : null
 	);
 	const awaiting = $derived(!!awaitingDate);
+	// A far-future sentinel (>= 9000) means "no date yet"; an implausibly old
+	// year (< 2000) means a bad/zero value slipped through — show TBA, never a
+	// nonsense "Jan 1".
 	const awaitingLabel = $derived(
-		!awaitingDate || awaitingDate.getUTCFullYear() >= 9000
+		!awaitingDate || awaitingDate.getUTCFullYear() >= 9000 || awaitingDate.getUTCFullYear() < 2000
 			? 'date TBA'
 			: awaitingDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
 	);
