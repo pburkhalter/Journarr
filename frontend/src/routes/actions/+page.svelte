@@ -51,6 +51,7 @@
 
 	const searchActions = $derived(actions.filter((a) => a.kind === 'search-missing'));
 	const libraryActions = $derived(actions.filter((a) => a.kind === 'library-scan'));
+	const transcodeActions = $derived(actions.filter((a) => a.kind.startsWith('transcode-')));
 
 	function paramsFor(a: Action): Record<string, unknown> {
 		if (a.kind === 'search-missing') return { instance_id: a.instance_id };
@@ -142,6 +143,24 @@
 		<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 			{#each libraryActions as a (a.id)}
 				{@render actionCard(a, 'Trigger a full library refresh')}
+			{/each}
+		</div>
+	</section>
+{/if}
+
+{#if transcodeActions.length > 0}
+	<section class="mb-6">
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transcoding</h2>
+		<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+			{#each transcodeActions as a (a.id)}
+				{@render actionCard(
+					a,
+					a.kind === 'transcode-scan'
+						? 'Rescan libraries for new/changed files'
+						: a.kind === 'transcode-pause'
+							? 'Pause the transcode workers'
+							: 'Resume the transcode workers'
+				)}
 			{/each}
 		</div>
 	</section>
