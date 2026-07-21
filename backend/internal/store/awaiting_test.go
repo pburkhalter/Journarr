@@ -107,6 +107,42 @@ func TestStaleAwaitingIgnoredOnceGrabbed(t *testing.T) {
 	}
 }
 
+// TestFindRequestMatchesCompleted guards the duplicate-orphan bug: an upgrade /
+// re-grab arriving after a request completed must re-attach to it, so the
+// correlation lookups must match completed requests (the active-only variants
+// did not, spawning a fresh orphan each time).
+func TestFindRequestMatchesCompleted(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	seerr, tmdb := int64(9200), int64(555)
+	rid, err := s.UpsertRequest(ctx, Request{SeerrRequestID: &seerr, MediaType: "movie", Title: "Done Movie", TmdbID: &tmdb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRequestStatus(ctx, rid, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.FindRequestByTmdb(ctx, tmdb, "movie"); err != nil || got == nil || got.ID != rid {
+		t.Fatalf("FindRequestByTmdb didn't match completed request: got=%v err=%v", got, err)
+	}
+	if a, _ := s.FindActiveRequestByTmdb(ctx, tmdb, "movie"); a != nil {
+		t.Error("active-only lookup should NOT match a completed request (that's the bug it replaces)")
+	}
+
+	seerr2, tvdb := int64(9201), int64(777)
+	rid2, err := s.UpsertRequest(ctx, Request{SeerrRequestID: &seerr2, MediaType: "tv", Title: "Done Series", TvdbID: &tvdb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRequestStatus(ctx, rid2, "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.FindRequestByTvdb(ctx, tvdb); err != nil || got == nil || got.ID != rid2 {
+		t.Fatalf("FindRequestByTvdb didn't match completed tv request: got=%v err=%v", got, err)
+	}
+}
+
 func TestParseSQLiteTime(t *testing.T) {
 	cases := map[string]bool{
 		"2026-07-13 03:00:00":           true,

@@ -34,9 +34,11 @@ func (p *Projector) resolveEpisodeItems(ctx context.Context, series *SeriesRef, 
 			}
 			continue
 		}
-		// Missing: attach to the active request for this series, else orphan.
+		// Missing: attach to the existing request for this series (any status —
+		// a new season/upgrade after completion must not spawn a duplicate),
+		// else orphan.
 		if reqID == 0 {
-			req, err := p.Store.FindActiveRequestByTvdb(ctx, series.TvdbID)
+			req, err := p.Store.FindRequestByTvdb(ctx, series.TvdbID)
 			if err != nil {
 				p.Log.Error("resolve: find request by tvdb", "err", err)
 				continue
@@ -81,7 +83,9 @@ func (p *Projector) resolveMovieItem(ctx context.Context, movie *MovieRef) (*sto
 	if movie == nil {
 		return nil, 0
 	}
-	req, err := p.Store.FindActiveRequestByTmdb(ctx, movie.TmdbID, "movie")
+	// Match regardless of status: an upgrade / re-grab arrives after the request
+	// already completed — attach to it instead of spawning a duplicate orphan.
+	req, err := p.Store.FindRequestByTmdb(ctx, movie.TmdbID, "movie")
 	if err != nil {
 		p.Log.Error("resolve: find movie request", "err", err)
 		return nil, 0

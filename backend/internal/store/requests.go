@@ -99,6 +99,14 @@ func (s *Store) FindRequestByTmdb(ctx context.Context, tmdbID int64, mediaType s
 		reqSelect+` WHERE tmdb_id = ? AND media_type = ? ORDER BY id DESC LIMIT 1`, tmdbID, mediaType))
 }
 
+// FindRequestByTvdb finds the newest tv request for a tvdb id regardless of
+// status — a later season or an upgrade grab arriving after the series request
+// already completed must attach to it, not spawn a duplicate orphan.
+func (s *Store) FindRequestByTvdb(ctx context.Context, tvdbID int64) (*Request, error) {
+	return s.scanRequest(s.db.QueryRowContext(ctx,
+		reqSelect+` WHERE tvdb_id = ? ORDER BY id DESC LIMIT 1`, tvdbID))
+}
+
 func (s *Store) GetRequest(ctx context.Context, id int64) (*Request, error) {
 	return s.scanRequest(s.db.QueryRowContext(ctx, reqSelect+` WHERE id = ?`, id))
 }
