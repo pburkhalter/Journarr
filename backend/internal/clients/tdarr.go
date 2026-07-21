@@ -169,6 +169,11 @@ func (c *Tdarr) post(ctx context.Context, apiPath string, body, out any) error {
 // cruddb wraps Tdarr's generic /api/v2/cruddb store operations. getAll returns
 // the collection as a JSON array.
 func (c *Tdarr) cruddb(ctx context.Context, collection, mode, docID string, obj, out any) error {
+	// Tdarr 2.82+ validates `obj` as an object and rejects null (getAll passes no
+	// obj), so default it to an empty object.
+	if obj == nil {
+		obj = map[string]any{}
+	}
 	body := map[string]any{"data": map[string]any{
 		"collection": collection, "mode": mode, "docID": docID, "obj": obj,
 	}}

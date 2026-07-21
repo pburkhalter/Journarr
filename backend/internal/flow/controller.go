@@ -168,42 +168,62 @@ func (c *Controller) execNotify(ctx context.Context, task store.FlowTask) error 
 	if err != nil {
 		return err
 	}
-	var pending []store.MediaItem
+	// Items announced in a prior cycle (a retry or a quality upgrade re-runs the
+	// pipeline and re-reaches the notify stage) must advance to 'notified' again
+	// but WITHOUT a second message — otherwise every upgrade re-pings WhatsApp.
+	alreadyNotified, err := c.Store.NotifiedItemIDs(ctx, reqID)
+	if err != nil {
+		return err
+	}
+	var pending, toSend []store.MediaItem
 	for _, it := range items {
-		if it.CurrentStage == notifyStage { // reached completion but not yet notified
+		if it.CurrentStage == notifyStage {
 			pending = append(pending, it)
+			if !alreadyNotified[it.ID] {
+				toSend = append(toSend, it)
+			}
 		}
 	}
 	if len(pending) == 0 {
-		return nil // already notified (or nothing at the stage)
+		return nil // nothing at the stage
 	}
 
-	notif := clients.Notification{MediaType: req.MediaType, Title: req.Title, PosterURL: req.PosterURL}
-	if req.TmdbID != nil {
-		notif.TmdbID = *req.TmdbID
-	}
-	if req.Year != nil {
-		notif.Year = *req.Year
-	}
 	sent := make(map[int64]bool, len(pending))
 	ids := make([]int64, 0, len(pending))
 	for _, it := range pending {
 		ids = append(ids, it.ID)
 		sent[it.ID] = true
-		if it.MediaType == "episode" && it.SeasonNumber != nil && it.EpisodeNumber != nil {
-			notif.Episodes = append(notif.Episodes, clients.NotifyEpisode{
-				Season: *it.SeasonNumber, Episode: *it.EpisodeNumber, Title: it.Title,
-			})
-		}
 	}
 
-	if _, err := c.Notifier.SendNotification(ctx, notif); err != nil {
-		return err // retried with backoff (nothing sent, nothing recorded)
+	// Only message about items never announced before.
+	if len(toSend) > 0 {
+		notif := clients.Notification{MediaType: req.MediaType, Title: req.Title, PosterURL: req.PosterURL}
+		if req.TmdbID != nil {
+			notif.TmdbID = *req.TmdbID
+		}
+		if req.Year != nil {
+			notif.Year = *req.Year
+		}
+		for _, it := range toSend {
+			if it.MediaType == "episode" && it.SeasonNumber != nil && it.EpisodeNumber != nil {
+				notif.Episodes = append(notif.Episodes, clients.NotifyEpisode{
+					Season: *it.SeasonNumber, Episode: *it.EpisodeNumber, Title: it.Title,
+				})
+			}
+		}
+		if _, err := c.Notifier.SendNotification(ctx, notif); err != nil {
+			return err // retried with backoff (nothing sent, nothing recorded)
+		}
+		c.Log.Info("flow: sent completion notice", "req", reqID, "items", len(toSend))
+	} else {
+		c.Log.Info("flow: items re-completed, already announced — advancing without re-notifying",
+			"req", reqID, "items", len(ids))
 	}
-	// Record 'notified' via the event path (single writer = the projector).
-	// The message is already delivered, so retry the insert a few times rather
-	// than dropping the record (a lost record would let a later completion
-	// re-select and re-notify these items).
+
+	// Advance ALL items at the stage to 'notified' (records the transition),
+	// whether or not we messaged about them, so re-completed items don't sit at
+	// the notify stage. The message (if any) is already delivered, so retry the
+	// insert a few times rather than dropping the record.
 	payload, _ := json.Marshal(pipeline.NotifiedOp{
 		MediaItemIDs: ids, MediaType: req.MediaType, Title: req.Title,
 	})
@@ -216,7 +236,6 @@ func (c *Controller) execNotify(ctx context.Context, task store.FlowTask) error 
 	if c.Wake != nil {
 		c.Wake()
 	}
-	c.Log.Info("flow: sent completion notice", "req", reqID, "items", len(ids))
 
 	// Catch stragglers that reached notify_stage during the send window: they
 	// were coalesced away by this task's dedupe key and their OnStageApplied was

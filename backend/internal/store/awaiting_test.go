@@ -58,6 +58,55 @@ func TestRollupAwaitingReleaseDate(t *testing.T) {
 	assert(mvID, "movie item-level")
 }
 
+// TestStaleAwaitingIgnoredOnceGrabbed guards the "done movie stuck in Waiting"
+// bug: the release poller stops re-checking an item once it leaves
+// requested/approved, so its awaiting stamp can go stale. A grabbed/available
+// item must NOT keep the request pinned in Waiting.
+func TestStaleAwaitingIgnoredOnceGrabbed(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	seerr := int64(9101)
+	rid, err := s.UpsertRequest(ctx, Request{SeerrRequestID: &seerr, MediaType: "movie", Title: "Grabbed Movie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, err := s.EnsureMediaItem(ctx, MediaItem{RequestID: &rid, MediaType: "movie", CurrentStage: "available"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAwaitingRelease(ctx, itemID, time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRequestStatus(ctx, rid, "completed"); err != nil {
+		t.Fatal(err)
+	}
+
+	roll, err := s.RollupForRequest(ctx, rid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roll.AwaitingReleaseAt != nil {
+		t.Errorf("stale awaiting stamp on a grabbed item still surfaced: %v", roll.AwaitingReleaseAt)
+	}
+	waiting, _ := s.ListRequests(ctx, "waiting", "", 100, 0)
+	for _, r := range waiting {
+		if r.ID == rid {
+			t.Error("grabbed movie wrongly listed under Waiting")
+		}
+	}
+	done, _ := s.ListRequests(ctx, "done", "", 100, 0)
+	found := false
+	for _, r := range done {
+		if r.ID == rid {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("completed movie not listed under Done")
+	}
+}
+
 func TestParseSQLiteTime(t *testing.T) {
 	cases := map[string]bool{
 		"2026-07-13 03:00:00":           true,

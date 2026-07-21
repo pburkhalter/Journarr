@@ -135,3 +135,28 @@ func (s *Store) HasTransition(ctx context.Context, itemID int64, cycle int, stag
 	}
 	return err == nil, err
 }
+
+// NotifiedItemIDs returns the set of a request's items that already have a
+// 'notified' transition in any cycle. The notify controller uses it to avoid
+// re-announcing an item that re-completes after a retry or a quality upgrade
+// (each such cycle re-reaches the notify stage).
+func (s *Store) NotifiedItemIDs(ctx context.Context, requestID int64) (map[int64]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT st.media_item_id
+		FROM stage_transitions st
+		JOIN media_items mi ON mi.id = st.media_item_id
+		WHERE mi.request_id = ? AND st.stage = 'notified'`, requestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

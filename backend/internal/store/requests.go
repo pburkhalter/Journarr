@@ -163,9 +163,13 @@ func (s *Store) ListRequests(ctx context.Context, status, q string, limit, offse
 	// A request is "waiting" if it (or one of its items) carries a future
 	// release date. Waiting requests surface ONLY in the Waiting view — excluded
 	// from Active and Done so they don't clutter what's actionable/finished.
+	// An item only counts as "waiting for release" while it hasn't been grabbed
+	// yet (stage requested/approved). Once it's downloading/available a stale
+	// awaiting stamp must not keep the request pinned in Waiting.
 	awaiting := `(requests.awaiting_release_at IS NOT NULL OR EXISTS (
 		SELECT 1 FROM media_items mi WHERE mi.request_id = requests.id
-		AND mi.awaiting_release_at IS NOT NULL))`
+		AND mi.awaiting_release_at IS NOT NULL
+		AND mi.current_stage IN ('requested','approved')))`
 	switch status {
 	case "", "all":
 	case "waiting":
@@ -286,7 +290,8 @@ func (s *Store) stageCounts(ctx context.Context, requestID int64) (counts map[st
 		SELECT COALESCE(
 			(SELECT awaiting_release_at FROM requests WHERE id = ?),
 			(SELECT MIN(awaiting_release_at) FROM media_items
-				WHERE request_id = ? AND awaiting_release_at IS NOT NULL))`,
+				WHERE request_id = ? AND awaiting_release_at IS NOT NULL
+				AND current_stage IN ('requested','approved')))`,
 		requestID, requestID).Scan(&awaitStr)
 	if awaitStr.Valid {
 		if t, ok := parseSQLiteTime(awaitStr.String); ok {
