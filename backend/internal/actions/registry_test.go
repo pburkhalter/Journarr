@@ -27,15 +27,13 @@ func TestAvailableGlobalDerivesFromCaps(t *testing.T) {
 		switch d.Kind {
 		case "search-missing":
 			searchMissing++
-			if d.InstanceID == "" {
-				t.Error("search-missing descriptor missing instance_id")
-			}
 		case "library-scan":
 			libraryScan++
 		}
 	}
-	if searchMissing != 3 { // two sonarrs + radarr
-		t.Errorf("search-missing = %d, want 3", searchMissing)
+	// whole-library "search missing" was removed (fetcharr owns that now).
+	if searchMissing != 0 {
+		t.Errorf("search-missing = %d, want 0 (removed)", searchMissing)
 	}
 	if libraryScan != 1 {
 		t.Errorf("library-scan = %d, want 1", libraryScan)

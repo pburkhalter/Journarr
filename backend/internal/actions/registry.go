@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/pburkhalter/journarr/internal/clients"
 	"github.com/pburkhalter/journarr/internal/registry"
 )
 
@@ -15,7 +14,7 @@ import (
 type Descriptor struct {
 	ID         string `json:"id"`
 	Label      string `json:"label"`
-	Kind       string `json:"kind"`  // search-missing|library-scan|cancel|retry|season-search
+	Kind       string `json:"kind"`  // library-scan|cancel|retry|season-search
 	Scope      string `json:"scope"` // global|request|season|item
 	InstanceID string `json:"instance_id,omitempty"`
 	RequestID  int64  `json:"request_id,omitempty"`
@@ -32,12 +31,7 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 	}
 	switch scope {
 	case "global":
-		for _, inst := range a.Reg.WithCapability(registry.CapSearchMissing) {
-			out = append(out, Descriptor{
-				ID: "search-missing:" + inst.ID, Label: "Search missing — " + inst.Label,
-				Kind: "search-missing", Scope: "global", InstanceID: inst.ID,
-			})
-		}
+		// (whole-library "search missing" removed — fetcharr owns that now)
 		for _, inst := range a.Reg.WithCapability(registry.CapLibraryScan) {
 			out = append(out, Descriptor{
 				ID: "library-scan:" + inst.ID, Label: inst.Label + " library scan",
@@ -98,8 +92,6 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 // Execute dispatches an action by kind. Params carry the target ids.
 func (a *Actions) Execute(ctx context.Context, kind string, params map[string]any) error {
 	switch kind {
-	case "search-missing":
-		return a.SearchMissing(ctx, pStr(params, "instance_id"))
 	case "library-scan":
 		return a.JellyfinScan(ctx)
 	case "transcode-scan":
@@ -117,36 +109,6 @@ func (a *Actions) Execute(ctx context.Context, kind string, params map[string]an
 	default:
 		return fmt.Errorf("unknown action %q", kind)
 	}
-}
-
-// SearchMissing triggers an arr's "search all missing monitored" command.
-func (a *Actions) SearchMissing(ctx context.Context, instanceID string) error {
-	id, _ := a.Store.InsertAction(ctx, "search_missing", "instance", 0)
-	if a.Reg == nil {
-		return a.finish(ctx, id, fmt.Errorf("registry unavailable"))
-	}
-	inst := a.Reg.ByID(instanceID)
-	if inst == nil {
-		return a.finish(ctx, id, fmt.Errorf("instance %q not found", instanceID))
-	}
-	arr, ok := inst.Client.(*clients.Arr)
-	if !ok {
-		return a.finish(ctx, id, fmt.Errorf("instance %q is not an arr", instanceID))
-	}
-	var cmd string
-	switch inst.Kind {
-	case registry.KindSonarr:
-		cmd = "MissingEpisodeSearch"
-	case registry.KindRadarr:
-		cmd = "MissingMoviesSearch"
-	default:
-		return a.finish(ctx, id, fmt.Errorf("search-missing unsupported for kind %q", inst.Kind))
-	}
-	err := arr.Command(ctx, cmd, nil)
-	if err == nil && a.Wake != nil {
-		a.Wake()
-	}
-	return a.finishDetail(ctx, id, err, "instance="+instanceID)
 }
 
 // SeasonSearch triggers Sonarr's SeasonSearch for the request's series + season.
