@@ -242,7 +242,7 @@ func TestNotifiedStage(t *testing.T) {
 	emit(t, s, "seerr", "approved", SeerrOp{SeerrRequestID: 1, Kind: "approved", MediaType: "movie", TmdbID: 693134, Title: "Dune"})
 	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "d1", Movie: movie})
 	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "d1", Movie: movie, MoviePath: "/d.mkv"})
-	emit(t, s, "concierge", "notified", NotifiedOp{MediaType: "movie", TmdbID: 693134, Title: "Dune"})
+	emit(t, s, "notifyarr", "notified", NotifiedOp{MediaType: "movie", TmdbID: 693134, Title: "Dune"})
 	p.drain(ctx)
 	req, _ := s.FindRequestBySeerrID(ctx, 1)
 	items, _ := s.ListItemsForRequest(ctx, req.ID)
@@ -262,7 +262,7 @@ func TestNotifiedStage(t *testing.T) {
 		Episodes: []EpisodeRef{{SonarrID: 10, Season: 1, Episode: 1}, {SonarrID: 11, Season: 1, Episode: 2}}})
 	p.drain(ctx)
 	// The grab attaches to the active seerr tv request (matched by tvdb).
-	emit(t, s, "concierge", "notified", NotifiedOp{MediaType: "tv", TmdbID: 95396, Title: "Sev",
+	emit(t, s, "notifyarr", "notified", NotifiedOp{MediaType: "tv", TmdbID: 95396, Title: "Sev",
 		Episodes: []EpisodeNum{{Season: 1, Episode: 1}}})
 	p.drain(ctx)
 	req2, _ := s.FindRequestBySeerrID(ctx, 2)

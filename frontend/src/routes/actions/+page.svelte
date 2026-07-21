@@ -210,7 +210,7 @@
 					<span class="block text-sm font-medium">Send notifications via Journarr</span>
 					<span class="text-[11px] text-muted-foreground">
 						Journarr triggers the WhatsApp notice on completion &amp; records the Notified stage.
-						Requires concierge <code class="text-foreground">NOTIFY_MODE=journarr</code> + a shared token.
+						Requires notifyarr <code class="text-foreground">NOTIFY_MODE=journarr</code> + a shared token.
 					</span>
 				</span>
 				<input

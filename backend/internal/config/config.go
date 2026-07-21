@@ -46,7 +46,7 @@ type Config struct {
 
 	ProwlarrURL    string `env:"PROWLARR_URL"`
 	ProwlarrAPIKey string `env:"PROWLARR_API_KEY"`
-	// SceneNZB grab-quota, shown on the Prowlarr tile (moved off concierge).
+	// SceneNZB grab-quota, shown on the Prowlarr tile (moved off notifyarr).
 	ProwlarrQuotaIndexer string `env:"PROWLARR_QUOTA_INDEXER" envDefault:"SceneNZB"`
 	ProwlarrDailyCap     int    `env:"PROWLARR_DAILY_CAP" envDefault:"400"`
 
@@ -60,8 +60,8 @@ type Config struct {
 	WahaURL    string `env:"WAHA_URL"`
 	WahaAPIKey string `env:"WAHA_API_KEY"`
 
-	ConciergeURL    string `env:"CONCIERGE_URL"`
-	ConciergeAPIKey string `env:"CONCIERGE_API_KEY"` // token for the /notify/send endpoint
+	NotifyarrURL    string `env:"NOTIFYARR_URL"`
+	NotifyarrAPIKey string `env:"NOTIFYARR_API_KEY"` // token for the /notify/send endpoint
 
 	// Modular instance config. When set, JOURNARR_INSTANCES (inline JSON array)
 	// or JOURNARR_INSTANCES_FILE (path to the same) fully replaces the flat env
@@ -125,15 +125,15 @@ func (c *Config) legacySpecs() []registry.Spec {
 	add(registry.Spec{ID: "arrarr", Kind: registry.KindArrarr, URL: c.ArrarrURL, APIKey: c.ArrarrAPIKey})
 	add(registry.Spec{ID: "jellyfin", Kind: registry.KindJellyfin, URL: c.JellyfinURL, APIKey: c.JellyfinAPIKey,
 		Extra: map[string]string{"user_id": c.JellyfinUserID}})
-	// WAHA folds into the concierge tile: still health-checked, but ParentID
-	// hides its standalone tile and its status shows inside the concierge card.
-	// If concierge isn't configured, WAHA stands alone so its status isn't lost.
+	// WAHA folds into the notifyarr tile: still health-checked, but ParentID
+	// hides its standalone tile and its status shows inside the notifyarr card.
+	// If notifyarr isn't configured, WAHA stands alone so its status isn't lost.
 	wahaParent := ""
-	if c.ConciergeURL != "" {
-		wahaParent = "concierge"
+	if c.NotifyarrURL != "" {
+		wahaParent = "notifyarr"
 	}
 	add(registry.Spec{ID: "waha", Kind: registry.KindWaha, URL: c.WahaURL, APIKey: c.WahaAPIKey, ParentID: wahaParent})
-	add(registry.Spec{ID: "concierge", Kind: registry.KindConcierge, URL: c.ConciergeURL, APIKey: c.ConciergeAPIKey})
+	add(registry.Spec{ID: "notifyarr", Kind: registry.KindNotifyarr, URL: c.NotifyarrURL, APIKey: c.NotifyarrAPIKey})
 	return specs
 }
 

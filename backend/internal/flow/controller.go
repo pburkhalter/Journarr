@@ -22,7 +22,7 @@ import (
 
 const maxAttempts = 4
 
-// Notifier delivers a completion notice (satisfied by *clients.Concierge).
+// Notifier delivers a completion notice (satisfied by *clients.Notifyarr).
 type Notifier interface {
 	SendNotification(context.Context, clients.Notification) (string, error)
 }

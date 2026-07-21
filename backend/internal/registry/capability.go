@@ -22,11 +22,11 @@ const (
 	CapRetry          Capability = "retry"           // re-grab a failed item
 	CapCancel         Capability = "cancel"          // cancel a request end-to-end
 	CapLibraryScan    Capability = "library-scan"    // jellyfin: RefreshLibrary
-	CapNowPlaying     Capability = "now-playing"      // jellyfin: active playback sessions
-	CapTranscodeStage Capability = "transcode-stage"  // tdarr: drives the transcode stage
-	CapTranscodeScan  Capability = "transcode-scan"   // tdarr: rescan libraries
-	CapTranscodePause Capability = "transcode-pause"  // tdarr: pause/resume transcode workers
-	CapNotifySend     Capability = "notify-send"      // concierge: outbound notification send
+	CapNowPlaying     Capability = "now-playing"     // jellyfin: active playback sessions
+	CapTranscodeStage Capability = "transcode-stage" // tdarr: drives the transcode stage
+	CapTranscodeScan  Capability = "transcode-scan"  // tdarr: rescan libraries
+	CapTranscodePause Capability = "transcode-pause" // tdarr: pause/resume transcode workers
+	CapNotifySend     Capability = "notify-send"     // notifyarr: outbound notification send
 )
 
 // Kind is the concrete integration type an instance is built from.
@@ -40,7 +40,7 @@ const (
 	KindArrarr    Kind = "arrarr"
 	KindJellyfin  Kind = "jellyfin"
 	KindWaha      Kind = "waha"
-	KindConcierge Kind = "concierge"
+	KindNotifyarr Kind = "notifyarr"
 	KindTdarr     Kind = "tdarr"
 	KindJournarr  Kind = "journarr" // Journarr itself — a self-tile showing its own version
 	KindGeneric   Kind = "generic"
@@ -64,7 +64,7 @@ func defaultCaps(k Kind) []Capability {
 		return []Capability{CapHealth, CapIngestSource}
 	case KindWaha:
 		return []Capability{CapHealth}
-	case KindConcierge:
+	case KindNotifyarr:
 		return []Capability{CapHealth, CapIngestSource, CapNotifySend}
 	case KindTdarr:
 		return []Capability{CapHealth, CapTranscodeStage, CapIngestSource, CapTranscodeScan, CapTranscodePause}
@@ -100,8 +100,8 @@ func defaultLabel(k Kind) string {
 		return "Jellyfin"
 	case KindWaha:
 		return "WAHA"
-	case KindConcierge:
-		return "Concierge"
+	case KindNotifyarr:
+		return "Notifyarr"
 	case KindTdarr:
 		return "Tdarr"
 	case KindJournarr:
@@ -112,7 +112,7 @@ func defaultLabel(k Kind) string {
 }
 
 // kindOrder gives a stable default ordering that preserves the historical UI
-// order (seerr, sonarr, radarr, prowlarr, arrarr, jellyfin, waha, concierge).
+// order (seerr, sonarr, radarr, prowlarr, arrarr, jellyfin, waha, notifyarr).
 // Scaled by 10 so explicit per-instance Order values can interleave.
 var kindOrder = map[Kind]int{
 	KindSeerr:     10,
@@ -123,6 +123,6 @@ var kindOrder = map[Kind]int{
 	KindJellyfin:  60,
 	KindTdarr:     70,
 	KindWaha:      80,
-	KindConcierge: 90,
+	KindNotifyarr: 90,
 	KindJournarr:  100,
 }

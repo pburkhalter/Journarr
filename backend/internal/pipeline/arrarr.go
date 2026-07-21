@@ -155,8 +155,8 @@ func (p *Projector) applyAvailable(ctx context.Context, eventID int64, op Availa
 	return "matched", reqID, item.ID, 0
 }
 
-// applyNotified marks the item(s) the concierge just messaged about as
-// 'notified'. Concierge notifies at import time, so this often precedes the
+// applyNotified marks the item(s) the notifyarr just messaged about as
+// 'notified'. Notifyarr notifies at import time, so this often precedes the
 // Jellyfin 'available' event — the forward-only stage logic handles that, and
 // 'notified' (the last stage) also serves as a completion safety net when
 // Jellyfin matching never lands.

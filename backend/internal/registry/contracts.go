@@ -7,7 +7,7 @@ import (
 )
 
 // HealthChecker is the de-facto contract every tile-bearing client already
-// satisfies (Arr, Jellyfin, Seerr, Arrarr, Waha, Concierge). Made explicit here
+// satisfies (Arr, Jellyfin, Seerr, Arrarr, Waha, Notifyarr). Made explicit here
 // so the health-poll wiring can be capability-driven instead of hardcoded.
 type HealthChecker interface {
 	CheckHealth(context.Context) clients.HealthResult

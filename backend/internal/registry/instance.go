@@ -9,7 +9,7 @@ type Instance struct {
 	Kind     Kind
 	Label    string
 	Order    int
-	ParentID string // non-empty ⇒ folds into the parent's tile (e.g. waha → concierge)
+	ParentID string // non-empty ⇒ folds into the parent's tile (e.g. waha → notifyarr)
 	Caps     map[Capability]bool
 	Stages   []string
 	Client   any
@@ -118,10 +118,10 @@ func (r *Registry) Arrarr() *clients.Arrarr {
 	return nil
 }
 
-// Concierge returns the first concierge client, or nil.
-func (r *Registry) Concierge() *clients.Concierge {
-	for _, i := range r.ByKind(KindConcierge) {
-		if c, ok := i.Client.(*clients.Concierge); ok {
+// Notifyarr returns the first notifyarr client, or nil.
+func (r *Registry) Notifyarr() *clients.Notifyarr {
+	for _, i := range r.ByKind(KindNotifyarr) {
+		if c, ok := i.Client.(*clients.Notifyarr); ok {
 			return c
 		}
 	}

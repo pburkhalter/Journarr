@@ -92,8 +92,8 @@ func buildInstance(s Spec, timeout time.Duration) (*Instance, error) {
 		inst.Client = clients.NewSeerr(s.URL, s.APIKey, timeout)
 	case KindWaha:
 		inst.Client = clients.NewWaha(s.URL, s.APIKey, timeout)
-	case KindConcierge:
-		inst.Client = clients.NewConcierge(s.URL, s.APIKey, timeout)
+	case KindNotifyarr:
+		inst.Client = clients.NewNotifyarr(s.URL, s.APIKey, timeout)
 	case KindTdarr:
 		inst.Client = clients.NewTdarr(s.URL, s.APIKey, timeout)
 	case KindJournarr:

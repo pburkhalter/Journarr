@@ -87,7 +87,7 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 		res.Detail["health_messages"] = warnings
 	}
 	// Prowlarr: today's SceneNZB grab-quota headroom, surfaced on its own tile
-	// (the grabs come from Prowlarr, not arrarr/concierge).
+	// (the grabs come from Prowlarr, not arrarr/notifyarr).
 	if c.QuotaIndexer != "" {
 		if used, ok := c.indexerGrabsToday(ctx); ok {
 			left := c.QuotaDailyCap - used

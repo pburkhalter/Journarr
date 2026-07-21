@@ -20,7 +20,7 @@
 	const version = $derived(service.version ? service.version.replace(/^v/i, '') : '');
 
 	const detail = $derived(parseDetail(service));
-	// WAHA status folded into the concierge tile (no standalone WAHA tile).
+	// WAHA status folded into the notifyarr tile (no standalone WAHA tile).
 	const waha = $derived((detail['waha'] as string | undefined) ?? null);
 	const headroom = $derived((detail['torbox_create'] as TorboxCreate | undefined) ?? null);
 	const jobStates = $derived((detail['states'] as Record<string, number> | undefined) ?? null);
@@ -30,7 +30,7 @@
 	const healthMessages = $derived((detail['health_messages'] as string[] | undefined) ?? null);
 	const errorMsg = $derived((detail['error'] as string | undefined) ?? null);
 	const serverName = $derived((detail['server_name'] as string | undefined) ?? null);
-	// concierge extras
+	// notifyarr extras
 	const issues = $derived((detail['issues'] as string[] | undefined) ?? null);
 	const grabQuota = $derived(
 		(detail['grab_quota'] as { indexer: string; used: number; cap: number; left: number } | undefined) ?? null

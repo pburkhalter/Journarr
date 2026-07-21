@@ -99,7 +99,7 @@ type EpisodeNum struct {
 	Episode int64 `json:"episode"`
 }
 
-// NotifiedOp: waha-concierge sent a WhatsApp notification. Concierge carries
+// NotifiedOp: notifyarr sent a WhatsApp notification. Notifyarr carries
 // the series/movie TMDB id; episodes are matched via the request's tmdb_id
 // (media items are keyed by tvdb, but requests hold both).
 type NotifiedOp struct {

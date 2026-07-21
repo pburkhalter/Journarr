@@ -1,5 +1,5 @@
 // Package updates checks GitHub for the self-hosted custom stack (arrarr,
-// waha-concierge, journarr) and reports whether a newer tagged version than the
+// notifyarr, journarr) and reports whether a newer tagged version than the
 // running one exists — the equivalent of the *arr apps' built-in "new update
 // available" check, which we can't get for our own images. It reads the repo's
 // git tags (these repos tag releases but don't publish GitHub Releases). Results

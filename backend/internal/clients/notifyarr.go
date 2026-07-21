@@ -11,20 +11,20 @@ import (
 	"time"
 )
 
-// Concierge probes waha-concierge's /streaming-status.json — a self-aggregated
+// Notifyarr probes notifyarr's /streaming-status.json — a self-aggregated
 // health view (its own issue list, grab-quota headroom, stuck-job count). With
 // an API key it can also trigger the Journarr-owned notification send.
-type Concierge struct {
+type Notifyarr struct {
 	BaseURL string
 	APIKey  string // token for POST /notify/send (Journarr-owned notifications)
 	HTTP    *http.Client
 }
 
-func NewConcierge(baseURL, apiKey string, timeout time.Duration) *Concierge {
-	return &Concierge{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, HTTP: newHTTP(timeout)}
+func NewNotifyarr(baseURL, apiKey string, timeout time.Duration) *Notifyarr {
+	return &Notifyarr{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, HTTP: newHTTP(timeout)}
 }
 
-// Notification is a completion notice Journarr asks concierge to deliver.
+// Notification is a completion notice Journarr asks notifyarr to deliver.
 type Notification struct {
 	MediaType string          `json:"media_type"` // movie|tv
 	TmdbID    int64           `json:"tmdb_id"`
@@ -40,10 +40,10 @@ type NotifyEpisode struct {
 	Title   string `json:"title,omitempty"`
 }
 
-// SendNotification asks waha-concierge to deliver a WhatsApp completion notice
-// (concierge does the formatting + requester @mention + Jellyfin deep link) and
+// SendNotification asks notifyarr to deliver a WhatsApp completion notice
+// (notifyarr does the formatting + requester @mention + Jellyfin deep link) and
 // returns the message id.
-func (c *Concierge) SendNotification(ctx context.Context, n Notification) (string, error) {
+func (c *Notifyarr) SendNotification(ctx context.Context, n Notification) (string, error) {
 	body, err := json.Marshal(n)
 	if err != nil {
 		return "", err
@@ -72,7 +72,7 @@ func (c *Concierge) SendNotification(ctx context.Context, n Notification) (strin
 	return out.MessageID, nil
 }
 
-type conciergeStatus struct {
+type notifyarrStatus struct {
 	Version    string   `json:"version"`
 	OK         bool     `json:"ok"`
 	IssueCount int      `json:"issue_count"`
@@ -90,8 +90,8 @@ type conciergeStatus struct {
 	} `json:"scenenzb"`
 }
 
-func (c *Concierge) CheckHealth(ctx context.Context) HealthResult {
-	var body conciergeStatus
+func (c *Notifyarr) CheckHealth(ctx context.Context) HealthResult {
+	var body notifyarrStatus
 	lat, err := getJSON(ctx, c.HTTP, c.BaseURL+"/streaming-status.json", nil, &body)
 	if err != nil {
 		return down(lat, err)
@@ -104,8 +104,8 @@ func (c *Concierge) CheckHealth(ctx context.Context) HealthResult {
 		"stuck_jobs": body.Metrics.StuckJobs,
 		"unflushed":  body.Metrics.Unflushed,
 	}
-	// WAHA is folded into the concierge tile (no standalone WAHA tile): surface
-	// concierge's own view of the WhatsApp session here.
+	// WAHA is folded into the notifyarr tile (no standalone WAHA tile): surface
+	// notifyarr's own view of the WhatsApp session here.
 	if body.Metrics.Waha != "" {
 		detail["waha"] = body.Metrics.Waha
 	}

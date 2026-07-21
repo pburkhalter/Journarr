@@ -16,7 +16,7 @@ func legacyLikeSpecs() []Spec {
 		{ID: "arrarr", Kind: KindArrarr, URL: "http://arrarr"},
 		{ID: "jellyfin", Kind: KindJellyfin, URL: "http://jellyfin", Extra: map[string]string{"user_id": "u1"}},
 		{ID: "waha", Kind: KindWaha, URL: "http://waha"},
-		{ID: "concierge", Kind: KindConcierge, URL: "http://concierge"},
+		{ID: "notifyarr", Kind: KindNotifyarr, URL: "http://notifyarr"},
 	}
 }
 
@@ -41,7 +41,7 @@ func TestBuildLegacyBackwardCompat(t *testing.T) {
 	}
 
 	// Order preserves the historical UI order.
-	wantOrder := []string{"seerr", "sonarr", "radarr", "prowlarr", "arrarr", "jellyfin", "waha", "concierge"}
+	wantOrder := []string{"seerr", "sonarr", "radarr", "prowlarr", "arrarr", "jellyfin", "waha", "notifyarr"}
 	for i, inst := range reg.All() {
 		if inst.ID != wantOrder[i] {
 			t.Errorf("order[%d] = %q, want %q", i, inst.ID, wantOrder[i])
@@ -50,7 +50,7 @@ func TestBuildLegacyBackwardCompat(t *testing.T) {
 
 	// Typed accessors resolve.
 	if reg.Sonarr() == nil || reg.Radarr() == nil || reg.Seerr() == nil ||
-		reg.Jellyfin() == nil || reg.Arrarr() == nil || reg.Concierge() == nil {
+		reg.Jellyfin() == nil || reg.Arrarr() == nil || reg.Notifyarr() == nil {
 		t.Fatal("a typed accessor returned nil")
 	}
 	if reg.Jellyfin().UserID != "u1" {
@@ -67,8 +67,8 @@ func TestBuildLegacyBackwardCompat(t *testing.T) {
 	if p := reg.ByID("prowlarr"); p.Has(CapSearchMissing) || !p.Has(CapHealth) {
 		t.Error("prowlarr caps wrong (health-only expected)")
 	}
-	if c := reg.ByID("concierge"); !c.Has(CapNotifySend) {
-		t.Error("concierge missing CapNotifySend")
+	if c := reg.ByID("notifyarr"); !c.Has(CapNotifySend) {
+		t.Error("notifyarr missing CapNotifySend")
 	}
 }
 

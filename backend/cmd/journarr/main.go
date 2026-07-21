@@ -221,10 +221,10 @@ func run() error {
 	// user enables one in the Flow menu.
 	flowCtrl := flow.New(st, log, acts, cfg.StuckPollInterval)
 	flowCtrl.Wake = projector.Wake
-	// Notify-on-complete needs concierge + its /notify/send token; without both,
+	// Notify-on-complete needs notifyarr + its /notify/send token; without both,
 	// the setting is inert (enqueued notify tasks fail-and-exhaust harmlessly).
-	if concierge := reg.Concierge(); concierge != nil && cfg.ConciergeAPIKey != "" {
-		flowCtrl.Notifier = concierge
+	if notifyarr := reg.Notifyarr(); notifyarr != nil && cfg.NotifyarrAPIKey != "" {
+		flowCtrl.Notifier = notifyarr
 	}
 	if err := flowCtrl.Reload(ctx); err != nil {
 		log.Warn("flow: initial settings load failed", "err", err)
@@ -235,7 +235,7 @@ func run() error {
 
 	// GitHub update checker for the self-hosted custom stack. Compares the
 	// running version (from each service's health surface) against the repo's
-	// highest git tag. arrarr + concierge cut semver tags, so both get an
+	// highest git tag. arrarr + notifyarr cut semver tags, so both get an
 	// update badge. Journarr itself tracks :latest (no tags) — its tile shows
 	// the build version but no update badge, which is correct for a
 	// continuously-deployed app.
@@ -243,8 +243,8 @@ func run() error {
 	if reg.Arrarr() != nil {
 		updateRepos["arrarr"] = "pburkhalter/arrarr"
 	}
-	if reg.Concierge() != nil {
-		updateRepos["concierge"] = "pburkhalter/waha-concierge"
+	if reg.Notifyarr() != nil {
+		updateRepos["notifyarr"] = "pburkhalter/notifyarr"
 	}
 	var updateChecker *updates.Checker
 	if len(updateRepos) > 0 {

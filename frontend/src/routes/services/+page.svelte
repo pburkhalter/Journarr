@@ -37,9 +37,9 @@
 	}
 
 	// Tiles derive from the registry (order, label, folding). Instances with a
-	// parent_id (e.g. waha → concierge) are folded and not shown standalone.
+	// parent_id (e.g. waha → notifyarr) are folded and not shown standalone.
 	// Falls back to the historical hardcoded order if /api/instances is absent.
-	const fallbackOrder = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'concierge'];
+	const fallbackOrder = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'notifyarr'];
 
 	const sorted = $derived.by(() => {
 		if (live.instances.length > 0) {

@@ -8,7 +8,7 @@ import (
 
 type Event struct {
 	ID          int64
-	Source      string // seerr|sonarr|radarr|arrarr|jellyfin|concierge|poller|action
+	Source      string // seerr|sonarr|radarr|arrarr|jellyfin|notifyarr|poller|action
 	Kind        string
 	DedupeKey   string // "" = no natural key
 	Payload     []byte
