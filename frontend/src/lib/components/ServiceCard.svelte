@@ -36,7 +36,6 @@
 		(detail['grab_quota'] as { indexer: string; used: number; cap: number; left: number } | undefined) ?? null
 	);
 	const stuckJobs = $derived(detail['stuck_jobs'] as number | undefined);
-	const unflushed = $derived(detail['unflushed'] as number | undefined);
 	// tdarr: live transcode activity (only rendered while it's actually working)
 	const transcodes = $derived(
 		(detail['transcodes'] as { file: string; percentage: number; fps: number; eta: string }[] | undefined) ??
@@ -132,18 +131,11 @@
 		</div>
 	{/if}
 
-	{#if stuckJobs !== undefined || unflushed !== undefined}
+	{#if stuckJobs !== undefined}
 		<div class="mt-3 flex flex-wrap gap-1.5">
-			{#if stuckJobs !== undefined}
-				<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-					stuck jobs <span class="font-medium text-foreground tabular-nums">{stuckJobs}</span>
-				</span>
-			{/if}
-			{#if unflushed !== undefined}
-				<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-					unflushed <span class="font-medium text-foreground tabular-nums">{unflushed}</span>
-				</span>
-			{/if}
+			<span class="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+				stuck jobs <span class="font-medium text-foreground tabular-nums">{stuckJobs}</span>
+			</span>
 		</div>
 	{/if}
 

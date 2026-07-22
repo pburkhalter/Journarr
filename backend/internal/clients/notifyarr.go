@@ -79,7 +79,6 @@ type notifyarrStatus struct {
 	Issues     []string `json:"issues"`
 	Metrics    struct {
 		StuckJobs int    `json:"stuck_jobs"`
-		Unflushed int    `json:"unflushed"`
 		Waha      string `json:"waha"`
 	} `json:"metrics"`
 	SceneNZB struct {
@@ -102,7 +101,6 @@ func (c *Notifyarr) CheckHealth(ctx context.Context) HealthResult {
 	}
 	detail := map[string]any{
 		"stuck_jobs": body.Metrics.StuckJobs,
-		"unflushed":  body.Metrics.Unflushed,
 	}
 	// WAHA is folded into the notifyarr tile (no standalone WAHA tile): surface
 	// notifyarr's own view of the WhatsApp session here.
