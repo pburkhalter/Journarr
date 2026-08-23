@@ -148,3 +148,27 @@ func TestSecondInstanceOfKind(t *testing.T) {
 		t.Errorf("first sonarr = %q, want sonarr", reg.ByKind(KindSonarr)[0].ID)
 	}
 }
+
+// Der Aggregator kommt ueber eine Runtime-Typzusicherung an die Instanzen. Die
+// ist der einzige Teil der Verdrahtung, den der Compiler nicht abdeckt: eine
+// Instanz mit CapDiskSpace, deren Client das Interface nicht erfuellt, wird
+// stillschweigend uebersprungen und die Karte bliebe leer.
+func TestDiskSpaceCapableInstancesImplementReporter(t *testing.T) {
+	reg, err := Build([]Spec{
+		{ID: "sonarr", Kind: KindSonarr, URL: "http://sonarr:8989", APIKey: "x"},
+		{ID: "radarr", Kind: KindRadarr, URL: "http://radarr:7878", APIKey: "x"},
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reg.WithCapability(CapDiskSpace)
+	if len(got) != 2 {
+		t.Fatalf("erwartet 2 Instanzen mit %s, bekam %d", CapDiskSpace, len(got))
+	}
+	for _, inst := range got {
+		if _, ok := inst.Client.(DiskSpaceReporter); !ok {
+			t.Errorf("%s (%s) hat %s, erfuellt DiskSpaceReporter aber nicht",
+				inst.ID, inst.Kind, CapDiskSpace)
+		}
+	}
+}
