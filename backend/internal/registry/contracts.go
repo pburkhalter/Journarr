@@ -26,3 +26,11 @@ type MissingSearcher interface {
 type LibraryScanner interface {
 	RefreshLibrary(ctx context.Context) error
 }
+
+// DiskSpaceReporter exposes mounts and library roots. Satisfied by *clients.Arr;
+// any future client that can report storage can declare CapDiskSpace and be
+// picked up by the aggregator without touching it.
+type DiskSpaceReporter interface {
+	DiskSpace(ctx context.Context) ([]clients.DiskEntry, error)
+	RootFolders(ctx context.Context) ([]clients.RootFolder, error)
+}

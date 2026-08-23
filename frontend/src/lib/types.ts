@@ -76,6 +76,17 @@ export function stageIndex(key: string): number {
 	return STAGES.findIndex((s) => s.key === key);
 }
 
+export interface DiskMount {
+	path: string;
+	label?: string;
+	free_space: number;
+	total_space: number;
+	used_space: number;
+	used_percent: number;
+	is_library: boolean;
+	reported_by: string[];
+}
+
 export interface JellySession {
 	user: string;
 	client: string;

@@ -27,6 +27,7 @@ const (
 	CapTranscodeScan  Capability = "transcode-scan"  // tdarr: rescan libraries
 	CapTranscodePause Capability = "transcode-pause" // tdarr: pause/resume transcode workers
 	CapNotifySend     Capability = "notify-send"     // notifyarr: outbound notification send
+	CapDiskSpace      Capability = "disk-space"      // arr: reports mounts via /diskspace
 )
 
 // Kind is the concrete integration type an instance is built from.
@@ -51,9 +52,9 @@ const (
 func defaultCaps(k Kind) []Capability {
 	switch k {
 	case KindSonarr:
-		return []Capability{CapHealth, CapIngestSource, CapSearchMissing, CapSeasonSearch, CapEpisodeSearch, CapSeriesSearch, CapRetry, CapCancel}
+		return []Capability{CapHealth, CapIngestSource, CapSearchMissing, CapSeasonSearch, CapEpisodeSearch, CapSeriesSearch, CapRetry, CapCancel, CapDiskSpace}
 	case KindRadarr:
-		return []Capability{CapHealth, CapIngestSource, CapSearchMissing, CapMovieSearch, CapRetry, CapCancel}
+		return []Capability{CapHealth, CapIngestSource, CapSearchMissing, CapMovieSearch, CapRetry, CapCancel, CapDiskSpace}
 	case KindProwlarr:
 		return []Capability{CapHealth}
 	case KindArrarr:

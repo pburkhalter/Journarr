@@ -20,6 +20,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/registry"
+	"github.com/pburkhalter/journarr/internal/storage"
 	"github.com/pburkhalter/journarr/internal/store"
 	"github.com/pburkhalter/journarr/internal/updates"
 )
@@ -31,6 +32,7 @@ type Deps struct {
 	Ingest   *ingest.Handler // nil = no webhook ingestion
 	Actions  *actions.Actions
 	Registry *registry.Registry
+	Storage  *storage.Service // nil = disk-space endpoint returns empty
 	Flow     *flow.Controller // nil = control-plane disabled
 	Updates  *updates.Checker // nil = no update checks
 	Log      *slog.Logger
@@ -111,6 +113,17 @@ func NewRouter(d Deps) http.Handler {
 					meta = d.Registry.Meta()
 				}
 				writeJSON(w, map[string]any{"instances": meta})
+			})
+			// Free space per mount, aggregated from whichever instances can
+			// report it. Host-agnostic on purpose — see package storage.
+			r.Get("/diskspace", func(w http.ResponseWriter, req *http.Request) {
+				mounts := []storage.Mount{}
+				if d.Storage != nil {
+					if m := d.Storage.Mounts(req.Context()); m != nil {
+						mounts = m
+					}
+				}
+				writeJSON(w, map[string]any{"mounts": mounts})
 			})
 			// Active pipeline stage catalog — the single source the frontend
 			// reads instead of re-declaring stages. Capability-gated stages

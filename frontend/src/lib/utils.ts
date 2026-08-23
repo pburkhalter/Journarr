@@ -21,3 +21,18 @@ export function relativeTime(iso: string): string {
 export function titleCase(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+// Binary units — that is what the arrs report and what ZFS/df show, so the
+// numbers match when someone cross-checks on the NAS.
+export function formatBytes(n: number): string {
+	if (!Number.isFinite(n) || n <= 0) return '0 B';
+	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
+	let i = 0;
+	let v = n;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i++;
+	}
+	// Sub-10 values keep a decimal so "9.4 TiB" does not collapse to "9 TiB".
+	return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}

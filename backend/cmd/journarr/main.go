@@ -21,6 +21,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/poll"
 	"github.com/pburkhalter/journarr/internal/registry"
+	"github.com/pburkhalter/journarr/internal/storage"
 	"github.com/pburkhalter/journarr/internal/store"
 	"github.com/pburkhalter/journarr/internal/updates"
 	"github.com/pburkhalter/journarr/internal/web"
@@ -287,6 +288,7 @@ func run() error {
 		Ingest:   ing,
 		Actions:  acts,
 		Registry: reg,
+		Storage:  &storage.Service{Reg: reg, Log: log},
 		Flow:     flowCtrl,
 		Updates:  updateChecker,
 		Log:      log,

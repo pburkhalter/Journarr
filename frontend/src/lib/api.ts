@@ -1,5 +1,6 @@
 import type {
 	Action,
+	DiskMount,
 	Instance,
 	Me,
 	RawEvent,
@@ -34,6 +35,11 @@ export async function getServices(): Promise<ServiceHealth[]> {
 export async function getInstances(): Promise<Instance[]> {
 	const body = await get<{ instances: Instance[] }>('/api/instances');
 	return body.instances ?? [];
+}
+
+export async function getDiskSpace(): Promise<DiskMount[]> {
+	const body = await get<{ mounts: DiskMount[] }>('/api/diskspace');
+	return body.mounts ?? [];
 }
 
 export async function getSessions(): Promise<SessionsResponse> {

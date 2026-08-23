@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { getSessions, jellyfinScan } from '$lib/api';
+	import { getDiskSpace, getSessions, jellyfinScan } from '$lib/api';
+	import DiskSpaceCard from '$lib/components/DiskSpaceCard.svelte';
 	import ServiceCard from '$lib/components/ServiceCard.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
-	import type { JellySession } from '$lib/types';
+	import type { DiskMount, JellySession } from '$lib/types';
 
 	// Live Jellyfin now-playing, folded into the Jellyfin tile (no separate card).
 	let streams = $state<JellySession[]>([]);
@@ -17,6 +18,22 @@
 		};
 		void load();
 		const t = setInterval(load, 8000);
+		return () => clearInterval(t);
+	});
+
+	// Free space per mount. The backend caches for a minute, so a slow poll here
+	// is enough — the numbers move in hours, not seconds.
+	let mounts = $state<DiskMount[]>([]);
+	$effect(() => {
+		const load = async () => {
+			try {
+				mounts = await getDiskSpace();
+			} catch {
+				// leave the last reading up rather than blanking the card
+			}
+		};
+		void load();
+		const t = setInterval(load, 60000);
 		return () => clearInterval(t);
 	});
 
@@ -73,6 +90,10 @@
 			{scanning ? 'Scanning…' : 'Jellyfin scan'}
 		</button>
 	</div>
+</div>
+
+<div class="mb-4 max-w-xl">
+	<DiskSpaceCard {mounts} />
 </div>
 
 {#if sorted.length === 0}
