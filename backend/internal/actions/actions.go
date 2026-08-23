@@ -137,8 +137,27 @@ func (a *Actions) Retry(ctx context.Context, mediaItemID int64) error {
 	// arr) and bump each cycle so the incoming grab starts clean.
 	var episodeIDs, movieIDs []int64
 	for _, it := range affected {
-		if it.MediaType == "movie" && it.RadarrMovieID != nil {
-			movieIDs = append(movieIDs, *it.RadarrMovieID)
+		if it.MediaType == "movie" {
+			// radarr_movie_id wird erst beim ersten Grab gesetzt. Ein Film, der
+			// nie gegriffen wurde, hat also keine — ausgerechnet der Fall, fuer
+			// den es Retry gibt. Deshalb hier aus der tmdb_id nachschlagen und
+			// festschreiben, statt mit "no arr id" abzubrechen.
+			if it.RadarrMovieID == nil && it.TmdbID != nil && a.Radarr != nil {
+				if mv, err := a.Radarr.MovieByTmdbID(ctx, *it.TmdbID); err == nil && mv != nil {
+					if e := a.Store.SetItemRadarrMovieID(ctx, it.ID, mv.ID); e != nil {
+						a.Log.Warn("retry: persist radarr movie id", "item", it.ID, "err", e)
+					}
+					id := mv.ID
+					it.RadarrMovieID = &id
+					a.Log.Info("retry: resolved radarr movie id from tmdb",
+						"item", it.ID, "tmdb", *it.TmdbID, "movie", mv.ID)
+				} else if err != nil {
+					a.Log.Warn("retry: lookup movie by tmdb", "item", it.ID, "err", err)
+				}
+			}
+			if it.RadarrMovieID != nil {
+				movieIDs = append(movieIDs, *it.RadarrMovieID)
+			}
 		} else if it.SonarrEpisodeID != nil {
 			episodeIDs = append(episodeIDs, *it.SonarrEpisodeID)
 		}

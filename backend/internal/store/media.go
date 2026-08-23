@@ -8,25 +8,25 @@ import (
 )
 
 type MediaItem struct {
-	ID              int64      `json:"id"`
-	RequestID       *int64     `json:"request_id,omitempty"`
-	MediaType       string     `json:"media_type"` // movie|episode
-	TmdbID          *int64     `json:"tmdb_id,omitempty"`
-	TvdbID          *int64     `json:"tvdb_id,omitempty"`
-	SonarrSeriesID  *int64     `json:"sonarr_series_id,omitempty"`
-	SonarrEpisodeID *int64     `json:"sonarr_episode_id,omitempty"`
-	RadarrMovieID   *int64     `json:"radarr_movie_id,omitempty"`
-	SeasonNumber    *int64     `json:"season_number,omitempty"`
-	EpisodeNumber   *int64     `json:"episode_number,omitempty"`
-	Title           string     `json:"title"`
-	CurrentStage    string     `json:"current_stage"`
-	CurrentCycle    int        `json:"current_cycle"`
-	StuckSince      *time.Time `json:"stuck_since,omitempty"`
-	LastError       string     `json:"last_error,omitempty"`
-	ImportedPath    string     `json:"imported_path,omitempty"`
-	JellyfinItemID  string     `json:"jellyfin_item_id,omitempty"`
+	ID                int64      `json:"id"`
+	RequestID         *int64     `json:"request_id,omitempty"`
+	MediaType         string     `json:"media_type"` // movie|episode
+	TmdbID            *int64     `json:"tmdb_id,omitempty"`
+	TvdbID            *int64     `json:"tvdb_id,omitempty"`
+	SonarrSeriesID    *int64     `json:"sonarr_series_id,omitempty"`
+	SonarrEpisodeID   *int64     `json:"sonarr_episode_id,omitempty"`
+	RadarrMovieID     *int64     `json:"radarr_movie_id,omitempty"`
+	SeasonNumber      *int64     `json:"season_number,omitempty"`
+	EpisodeNumber     *int64     `json:"episode_number,omitempty"`
+	Title             string     `json:"title"`
+	CurrentStage      string     `json:"current_stage"`
+	CurrentCycle      int        `json:"current_cycle"`
+	StuckSince        *time.Time `json:"stuck_since,omitempty"`
+	LastError         string     `json:"last_error,omitempty"`
+	ImportedPath      string     `json:"imported_path,omitempty"`
+	JellyfinItemID    string     `json:"jellyfin_item_id,omitempty"`
 	AwaitingReleaseAt *time.Time `json:"awaiting_release_at,omitempty"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 const itemSelect = `SELECT id, request_id, media_type, tmdb_id, tvdb_id, sonarr_series_id,
@@ -283,4 +283,12 @@ func (s *Store) BumpItemCycle(ctx context.Context, id int64) (int, error) {
 	var cycle int
 	err = s.db.QueryRowContext(ctx, `SELECT current_cycle FROM media_items WHERE id = ?`, id).Scan(&cycle)
 	return cycle, err
+}
+
+// SetItemRadarrMovieID speichert die nachtraeglich aufgeloeste Radarr-Id, damit
+// die Aufloesung einmalig bleibt und spaetere Aktionen sie direkt vorfinden.
+func (s *Store) SetItemRadarrMovieID(ctx context.Context, id, movieID int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE media_items SET radarr_movie_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, movieID, id)
+	return err
 }
