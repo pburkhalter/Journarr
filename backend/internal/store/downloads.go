@@ -51,21 +51,38 @@ func scanDownload(row rowScanner) (*Download, error) {
 // them lowercase).
 func NormalizeDownloadID(id string) string { return strings.ToLower(strings.TrimSpace(id)) }
 
+// NormalizeSource maps the ways the arrs spell a download protocol onto
+// Journarr's vocabulary. The history API sends the enum as a string ("1"
+// usenet, "2" torrent); webhooks send names derived from the client type.
+// Anything else is unknown and stored as empty rather than as a stray token.
+func NormalizeSource(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "usenet":
+		return "usenet"
+	case "2", "torrent":
+		return "torrent"
+	}
+	return ""
+}
+
 // UpsertDownload records a grab. Matching prefers the newest non-terminal
 // download with the same client id (torrent infohash reuse: a later re-grab
 // of the same release gets its own row once the old one is terminal).
 func (s *Store) UpsertDownload(ctx context.Context, d Download) (int64, error) {
 	d.ClientDownloadID = NormalizeDownloadID(d.ClientDownloadID)
+	d.Source = NormalizeSource(d.Source)
 	existing, err := s.FindActiveDownloadByClientID(ctx, d.ClientDownloadID)
 	if err != nil {
 		return 0, err
 	}
 	if existing != nil {
+		// A replay (webhook + history poller) must not overwrite a known
+		// source with a blank one; the first known value stands.
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE downloads SET release_title = CASE WHEN ? != '' THEN ? ELSE release_title END,
 				indexer = CASE WHEN ? != '' THEN ? ELSE indexer END,
 				size_bytes = COALESCE(?, size_bytes),
-				source = CASE WHEN ? != '' THEN ? ELSE source END,
+				source = CASE WHEN ? != '' AND COALESCE(source, '') = '' THEN ? ELSE source END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
 			d.ReleaseTitle, d.ReleaseTitle, d.Indexer, d.Indexer, d.SizeBytes,

@@ -130,7 +130,7 @@ func (p *ArrHistoryPoller) normalize(rec clients.HistoryRecord) (string, any) {
 			ReleaseTitle: rec.SourceTitle,
 			Indexer:      rec.Data["indexer"],
 			Size:         size,
-			Protocol:     rec.Data["protocol"],
+			Protocol:     store.NormalizeSource(rec.Data["protocol"]),
 			Series:       series, Episodes: episodes, Movie: movie,
 		}
 	case "downloadFolderImported", "movieFolderImported":
