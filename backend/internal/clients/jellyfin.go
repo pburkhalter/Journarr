@@ -34,15 +34,26 @@ type JellyItem struct {
 	DateCreated       string            `json:"DateCreated"`
 }
 
+// itemsBase is the collection endpoint: user-scoped when a user id is set,
+// otherwise the api-key-only form.
+func (c *Jellyfin) itemsBase() string {
+	if c.UserID != "" {
+		return c.BaseURL + "/Users/" + c.UserID + "/Items"
+	}
+	return c.BaseURL + "/Items"
+}
+
 // RecentlyAdded lists the newest Movies and Episodes with provider ids + path.
 func (c *Jellyfin) RecentlyAdded(ctx context.Context, limit int) ([]JellyItem, error) {
-	base := c.BaseURL + "/Items"
-	if c.UserID != "" {
-		base = c.BaseURL + "/Users/" + c.UserID + "/Items"
-	}
-	url := base + "?SortBy=DateCreated&SortOrder=Descending&Recursive=true" +
+	return c.ItemsByDateCreated(ctx, 0, limit)
+}
+
+// ItemsByDateCreated pages Movies and Episodes newest-first, so a caller can
+// walk back to a cursor instead of hoping the newest N cover everything.
+func (c *Jellyfin) ItemsByDateCreated(ctx context.Context, startIndex, limit int) ([]JellyItem, error) {
+	url := c.itemsBase() + "?SortBy=DateCreated&SortOrder=Descending&Recursive=true" +
 		"&IncludeItemTypes=Movie,Episode&Fields=ProviderIds,Path,DateCreated" +
-		"&Limit=" + itoa(limit)
+		"&StartIndex=" + itoa(startIndex) + "&Limit=" + itoa(limit)
 	var out struct {
 		Items []JellyItem `json:"Items"`
 	}
@@ -53,18 +64,25 @@ func (c *Jellyfin) RecentlyAdded(ctx context.Context, limit int) ([]JellyItem, e
 }
 
 // SeriesTvdbID resolves a series' TVDB id from its Jellyfin item id.
+//
+// It queries the collection endpoint with Ids= rather than /Items/{id}: on
+// Jellyfin 10.11 the single-item route answers 400 to an api-key-only call
+// (no user context), which silently disabled episode matching for months.
+// The collection form works in both modes.
 func (c *Jellyfin) SeriesTvdbID(ctx context.Context, seriesID string) (int64, error) {
-	url := c.BaseURL + "/Items/" + seriesID
-	if c.UserID != "" {
-		url = c.BaseURL + "/Users/" + c.UserID + "/Items/" + seriesID
-	}
+	url := c.itemsBase() + "?Ids=" + seriesID + "&Fields=ProviderIds"
 	var out struct {
-		ProviderIds map[string]string `json:"ProviderIds"`
+		Items []struct {
+			ProviderIds map[string]string `json:"ProviderIds"`
+		} `json:"Items"`
 	}
 	if _, err := getJSON(ctx, c.HTTP, url, c.headers(), &out); err != nil {
 		return 0, err
 	}
-	return parseProviderID(out.ProviderIds, "Tvdb"), nil
+	if len(out.Items) == 0 {
+		return 0, fmt.Errorf("series %s not found", seriesID)
+	}
+	return parseProviderID(out.Items[0].ProviderIds, "Tvdb"), nil
 }
 
 // RefreshLibrary triggers a full library scan.

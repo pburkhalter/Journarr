@@ -24,6 +24,18 @@ type JellyfinPoller struct {
 	Wake     func()
 }
 
+const (
+	jellyfinCursorKey = "jellyfin:since"
+	jellyfinPageSize  = 100
+	jellyfinMaxPages  = 10
+	// jellyfinOverlap is how far behind the cursor a pass keeps scanning.
+	// DateCreated is the file's creation time (download), not the library-add
+	// time, so a slow import can land with an older stamp than a faster one
+	// already seen. Re-scanning a day is cheap: already-available items are
+	// skipped before any DB write and the event key dedupes the rest.
+	jellyfinOverlap = 24 * time.Hour
+)
+
 func (p *JellyfinPoller) Run(ctx context.Context) {
 	t := time.NewTicker(p.Interval)
 	defer t.Stop()
@@ -39,13 +51,24 @@ func (p *JellyfinPoller) Run(ctx context.Context) {
 }
 
 func (p *JellyfinPoller) pass(ctx context.Context) {
-	items, err := p.Jelly.RecentlyAdded(ctx, 100)
+	cursor, err := p.Store.GetPollCursor(ctx, jellyfinCursorKey)
 	if err != nil {
-		p.Log.Warn("jellyfin poll: recently added", "err", err)
+		p.Log.Warn("jellyfin poll: cursor", "err", err)
 		return
 	}
+	since, hasCursor := parseJellyfinTime(cursor)
+	// First run: one page, like before — no cursor to bound the walk yet.
+	maxPages := 1
+	if hasCursor {
+		maxPages = jellyfinMaxPages
+	}
+	floor := since.Add(-jellyfinOverlap)
+
 	seriesTvdb := map[string]int64{} // SeriesId -> tvdb, cached per pass (success only)
 	inserted := 0
+	lookupFailed := 0
+	var lastLookupErr error
+	newest := since
 
 	emit := func(mediaItemID int64, jellyID string) {
 		item, err := p.Store.GetMediaItem(ctx, mediaItemID)
@@ -69,47 +92,79 @@ func (p *JellyfinPoller) pass(ctx context.Context) {
 		}
 	}
 
-	for _, it := range items {
-		switch it.Type {
-		case "Movie":
-			tmdb := providerID(it.ProviderIds, "Tmdb")
-			if tmdb == 0 {
-				continue
+pages:
+	for page := 0; page < maxPages; page++ {
+		items, err := p.Jelly.ItemsByDateCreated(ctx, page*jellyfinPageSize, jellyfinPageSize)
+		if err != nil {
+			p.Log.Warn("jellyfin poll: recently added", "err", err)
+			return
+		}
+		for _, it := range items {
+			created, ok := parseJellyfinTime(it.DateCreated)
+			if ok && created.After(newest) {
+				newest = created
 			}
-			if mi, err := p.Store.FindMovieItemByTmdb(ctx, tmdb); err == nil && mi != nil {
-				emit(mi.ID, it.ID)
+			// Sorted newest-first: past the overlap floor nothing new follows.
+			if hasCursor && ok && created.Before(floor) {
+				break pages
 			}
-		case "Episode":
-			if it.ParentIndexNumber == nil || it.IndexNumber == nil || it.SeriesID == "" {
-				continue
-			}
-			tvdb, ok := seriesTvdb[it.SeriesID]
-			if !ok {
-				v, e := p.Jelly.SeriesTvdbID(ctx, it.SeriesID)
-				if e != nil {
-					// Don't cache a transient failure — retry on the next
-					// episode/pass rather than skipping the whole series.
-					p.Log.Debug("jellyfin poll: series tvdb lookup", "series", it.SeriesID, "err", e)
+			switch it.Type {
+			case "Movie":
+				tmdb := providerID(it.ProviderIds, "Tmdb")
+				if tmdb == 0 {
 					continue
 				}
-				seriesTvdb[it.SeriesID] = v // cache success (incl. a genuine 0)
-				tvdb = v
-			}
-			if tvdb == 0 {
-				continue
-			}
-			season := *it.ParentIndexNumber
-			epStart := *it.IndexNumber
-			epEnd := epStart
-			// Multi-episode files (IndexNumberEnd) cover a range.
-			if it.IndexNumberEnd != nil && *it.IndexNumberEnd > epEnd {
-				epEnd = *it.IndexNumberEnd
-			}
-			for ep := epStart; ep <= epEnd; ep++ {
-				if mi, err := p.Store.FindEpisodeItemByTvdb(ctx, tvdb, season, ep); err == nil && mi != nil {
+				if mi, err := p.Store.FindMovieItemByTmdb(ctx, tmdb); err == nil && mi != nil {
 					emit(mi.ID, it.ID)
 				}
+			case "Episode":
+				if it.ParentIndexNumber == nil || it.IndexNumber == nil || it.SeriesID == "" {
+					continue
+				}
+				tvdb, ok := seriesTvdb[it.SeriesID]
+				if !ok {
+					v, e := p.Jelly.SeriesTvdbID(ctx, it.SeriesID)
+					if e != nil {
+						// Don't cache a transient failure — retry on the next
+						// episode/pass rather than skipping the whole series.
+						lookupFailed++
+						lastLookupErr = e
+						continue
+					}
+					seriesTvdb[it.SeriesID] = v // cache success (incl. a genuine 0)
+					tvdb = v
+				}
+				if tvdb == 0 {
+					continue
+				}
+				season := *it.ParentIndexNumber
+				epStart := *it.IndexNumber
+				epEnd := epStart
+				// Multi-episode files (IndexNumberEnd) cover a range.
+				if it.IndexNumberEnd != nil && *it.IndexNumberEnd > epEnd {
+					epEnd = *it.IndexNumberEnd
+				}
+				for ep := epStart; ep <= epEnd; ep++ {
+					if mi, err := p.Store.FindEpisodeItemByTvdb(ctx, tvdb, season, ep); err == nil && mi != nil {
+						emit(mi.ID, it.ID)
+					}
+				}
 			}
+		}
+		if len(items) < jellyfinPageSize {
+			break
+		}
+	}
+
+	// A silent lookup failure hid a dead poller for weeks (every episode was
+	// skipped on a 400 that only reached the debug log). Say it once per pass.
+	if lookupFailed > 0 {
+		p.Log.Warn("jellyfin poll: series lookups failed, episodes skipped",
+			"count", lookupFailed, "err", lastLookupErr)
+	}
+	if newest.After(since) {
+		if err := p.Store.SetPollCursor(ctx, jellyfinCursorKey, newest.UTC().Format(time.RFC3339Nano)); err != nil {
+			p.Log.Warn("jellyfin poll: save cursor", "err", err)
 		}
 	}
 	if inserted > 0 {
@@ -118,6 +173,20 @@ func (p *JellyfinPoller) pass(ctx context.Context) {
 			p.Wake()
 		}
 	}
+}
+
+// parseJellyfinTime reads Jellyfin's DateCreated (RFC3339 with up to seven
+// fractional digits) or the cursor Journarr wrote.
+func parseJellyfinTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // providerID reads a provider id case-insensitively (Jellyfin keys are
