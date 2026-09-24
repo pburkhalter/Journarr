@@ -51,9 +51,9 @@ func (s *Store) ClearAwaitingRelease(ctx context.Context, itemID int64) error {
 
 // TVWaitCandidate is a tv request the waiting poller evaluates against Sonarr.
 type TVWaitCandidate struct {
-	ID              int64
-	TvdbID          int64
-	InFlight        bool       // has an item still being worked (not available/notified)
+	ID                int64
+	TvdbID            int64
+	InFlight          bool       // has an item still being worked (not available/notified)
 	AwaitingReleaseAt *time.Time // current request-level awaiting date (nil = none)
 }
 

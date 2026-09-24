@@ -130,6 +130,7 @@ func (c *Arr) indexerGrabsToday(ctx context.Context) (int, bool) {
 type MovieRelease struct {
 	TmdbID          int64
 	IsAvailable     bool   // true once past minimumAvailability (grabbable)
+	HasFile         bool   // a file is on disk — nothing to wait for
 	Status          string // tba|announced|inCinemas|released|deleted
 	Monitored       bool
 	DigitalRelease  *time.Time
@@ -144,6 +145,7 @@ func (c *Arr) LookupMovieByTmdb(ctx context.Context, tmdbID int64) (*MovieReleas
 	var out []struct {
 		TmdbID          int64      `json:"tmdbId"`
 		IsAvailable     bool       `json:"isAvailable"`
+		HasFile         bool       `json:"hasFile"`
 		Status          string     `json:"status"`
 		Monitored       bool       `json:"monitored"`
 		DigitalRelease  *time.Time `json:"digitalRelease"`
@@ -159,7 +161,7 @@ func (c *Arr) LookupMovieByTmdb(ctx context.Context, tmdbID int64) (*MovieReleas
 	}
 	m := out[0]
 	return &MovieRelease{
-		TmdbID: m.TmdbID, IsAvailable: m.IsAvailable, Status: m.Status,
+		TmdbID: m.TmdbID, IsAvailable: m.IsAvailable, HasFile: m.HasFile, Status: m.Status,
 		Monitored: m.Monitored, DigitalRelease: m.DigitalRelease,
 		PhysicalRelease: m.PhysicalRelease, InCinemas: m.InCinemas,
 	}, nil
