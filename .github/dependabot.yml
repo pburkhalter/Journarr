@@ -8,6 +8,11 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    ignore:
+      # TypeScript 7 (the native port) crashes svelte-check, and SvelteKit's
+      # peer range stops at 6. Lift once svelte-check supports it.
+      - dependency-name: typescript
+        versions: [">=7"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
