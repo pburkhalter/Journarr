@@ -7,9 +7,12 @@ package flow
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -21,6 +24,14 @@ import (
 )
 
 const maxAttempts = 4
+
+// statusDead parks a notify task whose retries ran out. Unlike 'failed' it is
+// not final: once the notifier is healthy again the reviver re-enqueues it.
+// A month of WAHA downtime in Aug 2026 silently dropped 20 notices this way.
+const statusDead = "dead"
+
+// reviveEvery bounds how often dead notify tasks are re-tried.
+const reviveEvery = 30 * time.Minute
 
 // Notifier delivers a completion notice (satisfied by *clients.Notifyarr).
 type Notifier interface {
@@ -34,9 +45,13 @@ type Controller struct {
 	Notifier Notifier // nil ⇒ notify-on-complete disabled
 	Wake     func()   // wakes the projector after inserting a notified event
 	Tick     time.Duration
+	// NotifierHealthID is the service_health row of the notifier instance;
+	// dead notify tasks are only revived while it reports up.
+	NotifierHealthID string
 
-	mu       sync.RWMutex
-	settings map[string]string
+	mu         sync.RWMutex
+	settings   map[string]string
+	nextRevive time.Time
 }
 
 func New(st *store.Store, log *slog.Logger, acts *actions.Actions, tick time.Duration) *Controller {
@@ -96,7 +111,7 @@ func (c *Controller) OnStageApplied(itemID, reqID int64, stage string, cycle int
 		// One pending notify per request, delayed to group a season's episodes
 		// into a single message. Cleared on finish so a later completion re-fires.
 		_, _ = c.Store.EnqueueFlowTask(ctx, "notify", "request", reqID, "",
-			fmt.Sprintf("notify:req:%d", reqID), time.Now().Add(60*time.Second))
+			store.NotifyTaskKey(reqID), time.Now().Add(60*time.Second))
 	}
 }
 
@@ -128,8 +143,14 @@ func (c *Controller) drain(ctx context.Context) {
 			continue
 		}
 		if task.Attempts+1 >= maxAttempts {
-			c.Log.Warn("flow: task exhausted", "kind", task.Kind, "target", task.TargetID, "err", err)
-			_ = c.Store.FinishFlowTask(ctx, task.ID, "failed")
+			status := "failed"
+			if task.Kind == "notify" {
+				status = statusDead // revived once the notifier is back
+			}
+			c.Log.Warn("flow: task exhausted", "kind", task.Kind, "target", task.TargetID, "status", status, "err", err)
+			if e := c.Store.FinishFlowTask(ctx, task.ID, status); e != nil {
+				c.Log.Warn("flow: finish task", "id", task.ID, "err", e)
+			}
 			continue
 		}
 		backoff := time.Duration(task.Attempts+1) * 2 * time.Minute
@@ -197,7 +218,10 @@ func (c *Controller) execNotify(ctx context.Context, task store.FlowTask) error 
 
 	// Only message about items never announced before.
 	if len(toSend) > 0 {
-		notif := clients.Notification{MediaType: req.MediaType, Title: req.Title, PosterURL: req.PosterURL}
+		notif := clients.Notification{
+			MediaType: req.MediaType, Title: req.Title, PosterURL: req.PosterURL,
+			IdempotencyKey: notifyIdemKey(reqID, toSend),
+		}
 		if req.TmdbID != nil {
 			notif.TmdbID = *req.TmdbID
 		}
@@ -246,17 +270,35 @@ func (c *Controller) execNotify(ctx context.Context, task store.FlowTask) error 
 		if it.CurrentStage == notifyStage && !sent[it.ID] {
 			_ = c.Store.ReleaseFlowTaskDedupe(ctx, task.ID)
 			_, _ = c.Store.EnqueueFlowTask(ctx, "notify", "request", reqID, "",
-				fmt.Sprintf("notify:req:%d", reqID), time.Now().Add(20*time.Second))
+				store.NotifyTaskKey(reqID), time.Now().Add(20*time.Second))
 			break
 		}
 	}
 	return nil
 }
 
-// sweep applies the auto-retry-stuck rule. Clearing the stuck flag on enqueue
-// bounds the retry cadence to the stuck threshold (MarkStuck re-flags later)
-// instead of retrying every tick.
+// notifyIdemKey names one delivery by its request and the exact items it
+// announces, so a retry after a timeout is recognised by notifyarr as the same
+// message rather than sent twice.
+func notifyIdemKey(reqID int64, items []store.MediaItem) string {
+	ids := make([]int64, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	h := sha256.New()
+	for _, id := range ids {
+		fmt.Fprintf(h, "%d,", id)
+	}
+	return fmt.Sprintf("%s:%s", store.NotifyTaskKey(reqID), hex.EncodeToString(h.Sum(nil))[:12])
+}
+
+// sweep applies the time-based rules: revive dead notify tasks while the
+// notifier is healthy, and the auto-retry-stuck rule. Clearing the stuck flag
+// on enqueue bounds the retry cadence to the stuck threshold (MarkStuck
+// re-flags later) instead of retrying every tick.
 func (c *Controller) sweep(ctx context.Context) {
+	c.reviveDeadNotifies(ctx)
 	secs := c.intVal("auto_retry_stuck_after_secs", 0)
 	if secs <= 0 {
 		return
@@ -274,4 +316,69 @@ func (c *Controller) sweep(ctx context.Context) {
 			c.Log.Info("flow: auto-retry stuck item", "item", it.ID, "stage", it.CurrentStage)
 		}
 	}
+}
+
+// reviveDeadNotifies re-enqueues notify tasks that exhausted their retries,
+// once the notifier reports healthy again. Each dead task becomes a fresh
+// pending task for its request (deduped against an already pending one) and
+// is marked 'revived' so the history stays honest.
+func (c *Controller) reviveDeadNotifies(ctx context.Context) {
+	if c.Notifier == nil {
+		return
+	}
+	now := time.Now()
+	if now.Before(c.nextRevive) {
+		return
+	}
+	c.nextRevive = now.Add(reviveEvery)
+	dead, err := c.Store.ListFlowTasks(ctx, "notify", statusDead, 50)
+	if err != nil {
+		c.Log.Warn("flow: list dead notify tasks", "err", err)
+		return
+	}
+	if len(dead) == 0 {
+		return
+	}
+	if !c.notifierUp(ctx) {
+		c.Log.Info("flow: notifier still down, keeping dead notify tasks", "count", len(dead))
+		return
+	}
+	for _, t := range dead {
+		if _, err := c.Store.EnqueueFlowTask(ctx, "notify", "request", t.TargetID, "",
+			store.NotifyTaskKey(t.TargetID), now); err != nil {
+			c.Log.Warn("flow: revive notify task", "req", t.TargetID, "err", err)
+			continue
+		}
+		if err := c.Store.FinishFlowTask(ctx, t.ID, "revived"); err != nil {
+			c.Log.Warn("flow: mark revived", "id", t.ID, "err", err)
+		}
+		c.Log.Info("flow: revived dead notify task", "req", t.TargetID)
+	}
+}
+
+// notifierUp reads the notifier's last health probe. notifyarr reports
+// 'degraded' for any issue on its status file, so a working WhatsApp session
+// counts as up even then.
+func (c *Controller) notifierUp(ctx context.Context) bool {
+	if c.NotifierHealthID == "" {
+		return true // no probe wired: try, the task just dies again if not
+	}
+	list, err := c.Store.ListServiceHealth(ctx)
+	if err != nil {
+		return false
+	}
+	for _, h := range list {
+		if h.Service != c.NotifierHealthID {
+			continue
+		}
+		if h.Status == "up" {
+			return true
+		}
+		var detail struct {
+			Waha string `json:"waha"`
+		}
+		_ = json.Unmarshal([]byte(h.Detail), &detail)
+		return h.Status == "degraded" && detail.Waha == "WORKING"
+	}
+	return false
 }

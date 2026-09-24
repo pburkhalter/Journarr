@@ -76,6 +76,22 @@
 	let detail = $state<RequestDetail | null>(null);
 	let requestActions = $state<Action[]>([]);
 	const seasonActions = $derived(requestActions.filter((a) => a.kind === 'season-search'));
+	const resendAction = $derived(requestActions.find((a) => a.kind === 'resend-notify'));
+
+	async function doResend() {
+		if (!resendAction) return;
+		busy = true;
+		actionMsg = '';
+		try {
+			await executeAction('resend-notify', { request_id: resendAction.request_id });
+			actionMsg = 'Notification queued';
+			await loadDetail(id);
+		} catch {
+			actionMsg = 'Resend failed';
+		} finally {
+			busy = false;
+		}
+	}
 	let selected = $state<ItemDetail | null>(null);
 	let rawEvents = $state<RawEvent[] | null>(null);
 	let rawError = $state(false);
@@ -195,6 +211,16 @@
 					{detail.request.title}
 					{#if detail.request.year}<span class="font-normal text-muted-foreground">({detail.request.year})</span>{/if}
 				</h1>
+				{#if resendAction}
+					<button
+						onclick={doResend}
+						disabled={busy}
+						title="Items completed but were never announced — send the notice now"
+						class="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+					>
+						Resend notification
+					</button>
+				{/if}
 				{#if detail.request.status === 'active' || detail.request.status === 'partial'}
 					<button
 						onclick={doCancel}

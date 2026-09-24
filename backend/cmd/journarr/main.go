@@ -226,6 +226,9 @@ func run() error {
 	// the setting is inert (enqueued notify tasks fail-and-exhaust harmlessly).
 	if notifyarr := reg.Notifyarr(); notifyarr != nil && cfg.NotifyarrAPIKey != "" {
 		flowCtrl.Notifier = notifyarr
+		if insts := reg.ByKind(registry.KindNotifyarr); len(insts) > 0 {
+			flowCtrl.NotifierHealthID = insts[0].ID
+		}
 	}
 	if err := flowCtrl.Reload(ctx); err != nil {
 		log.Warn("flow: initial settings load failed", "err", err)

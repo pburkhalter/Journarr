@@ -18,10 +18,20 @@ type Notifyarr struct {
 	BaseURL string
 	APIKey  string // token for POST /notify/send (Journarr-owned notifications)
 	HTTP    *http.Client
+	send    *http.Client
 }
 
+// notifySendTimeout bounds one /notify/send call. notifyarr keeps sending for
+// up to 30s after the caller hangs up (poster upload, WAHA latency), so a
+// short client timeout here turned a slow send into a retry — and a second
+// WhatsApp message. Health probes keep the shorter upstream timeout.
+const notifySendTimeout = 45 * time.Second
+
 func NewNotifyarr(baseURL, apiKey string, timeout time.Duration) *Notifyarr {
-	return &Notifyarr{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, HTTP: newHTTP(timeout)}
+	return &Notifyarr{
+		BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey,
+		HTTP: newHTTP(timeout), send: newHTTP(notifySendTimeout),
+	}
 }
 
 // Notification is a completion notice Journarr asks notifyarr to deliver.
@@ -32,6 +42,9 @@ type Notification struct {
 	Year      int64           `json:"year,omitempty"`
 	Episodes  []NotifyEpisode `json:"episodes,omitempty"`
 	PosterURL string          `json:"poster_url,omitempty"`
+	// IdempotencyKey lets notifyarr recognise a retried delivery and answer
+	// with the message it already sent instead of sending it again.
+	IdempotencyKey string `json:"-"`
 }
 
 type NotifyEpisode struct {
@@ -56,7 +69,14 @@ func (c *Notifyarr) SendNotification(ctx context.Context, n Notification) (strin
 	if c.APIKey != "" {
 		req.Header.Set("X-Notify-Token", c.APIKey)
 	}
-	resp, err := c.HTTP.Do(req)
+	if n.IdempotencyKey != "" {
+		req.Header.Set("X-Idempotency-Key", n.IdempotencyKey)
+	}
+	hc := c.send
+	if hc == nil {
+		hc = c.HTTP
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return "", err
 	}

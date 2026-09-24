@@ -32,9 +32,18 @@ type ArrarrStatus struct {
 	} `json:"torbox_create,omitempty"`
 }
 
+// authHeaders carries the SAB api key; arrarr ≥ 3.1.11 gates /status.json
+// behind it (the page lists job paths and error texts).
+func (c *Arrarr) authHeaders() map[string]string {
+	if c.APIKey == "" {
+		return nil
+	}
+	return map[string]string{"X-Api-Key": c.APIKey}
+}
+
 func (c *Arrarr) Status(ctx context.Context) (*ArrarrStatus, time.Duration, error) {
 	var body ArrarrStatus
-	lat, err := getJSON(ctx, c.HTTP, c.BaseURL+"/status.json", nil, &body)
+	lat, err := getJSON(ctx, c.HTTP, c.BaseURL+"/status.json", c.authHeaders(), &body)
 	if err != nil {
 		return nil, lat, err
 	}
@@ -91,7 +100,7 @@ func sabStatusToState(s string) string {
 func (c *Arrarr) Downloads(ctx context.Context) (items []ArrarrDownload, total int, err error) {
 	var q arrarrQueue
 	if _, err = getJSON(ctx, c.HTTP, c.BaseURL+"/api?mode=queue&output=json",
-		map[string]string{"X-Api-Key": c.APIKey}, &q); err != nil {
+		c.authHeaders(), &q); err != nil {
 		return nil, 0, err
 	}
 	for _, s := range q.Queue.Slots {

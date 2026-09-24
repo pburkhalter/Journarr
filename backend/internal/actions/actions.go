@@ -89,6 +89,53 @@ func (a *Actions) TdarrWorkers(ctx context.Context, gpu int) error {
 	return a.finish(ctx, id, t.SetTranscodeWorkers(ctx, gpu, 0))
 }
 
+// ResendNotify re-queues the completion notice for a request whose items
+// reached the notify stage but were never announced (a notice that died
+// during a notifier outage). The flow controller sends only the items that
+// have no 'notified' transition yet, so this never repeats a message.
+func (a *Actions) ResendNotify(ctx context.Context, requestID int64) error {
+	id, _ := a.Store.InsertAction(ctx, "resend_notify", "request", requestID)
+	req, err := a.Store.GetRequest(ctx, requestID)
+	if err != nil || req == nil {
+		return a.finish(ctx, id, fmt.Errorf("request %d not found", requestID))
+	}
+	inserted, err := a.Store.EnqueueFlowTask(ctx, "notify", "request", requestID, "",
+		store.NotifyTaskKey(requestID), time.Now())
+	if err != nil {
+		return a.finish(ctx, id, err)
+	}
+	detail := "queued"
+	if !inserted {
+		detail = "already pending"
+	}
+	return a.finishDetail(ctx, id, nil, detail)
+}
+
+// notifyStage is the stage a completion notice is sent at (flow setting).
+func (a *Actions) notifyStage(ctx context.Context) string {
+	if m, err := a.Store.GetFlowSettings(ctx); err == nil && m["notify_stage"] != "" {
+		return m["notify_stage"]
+	}
+	return "available"
+}
+
+// hasUnannounced reports whether the request has items sitting at the notify
+// stage that were never announced — the condition for offering a resend.
+func (a *Actions) hasUnannounced(ctx context.Context, requestID int64) bool {
+	items, err := a.Store.ListItemsForRequest(ctx, requestID)
+	if err != nil {
+		return false
+	}
+	stage := a.notifyStage(ctx)
+	notified, _ := a.Store.NotifiedItemIDs(ctx, requestID)
+	for _, it := range items {
+		if it.CurrentStage == stage && !notified[it.ID] {
+			return true
+		}
+	}
+	return false
+}
+
 // Retry cancels the item's in-flight download(s) (blocklisting the bad
 // release) and re-searches. A season pack is ONE download linked to many
 // episodes, so retrying one episode re-searches every sibling that share the

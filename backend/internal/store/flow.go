@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"time"
 )
 
@@ -62,6 +63,31 @@ type FlowTask struct {
 	TargetID   int64
 	Payload    string
 	Attempts   int
+}
+
+// NotifyTaskKey is the dedupe key of a request's pending completion notice:
+// one such task at a time per request, whoever enqueues it.
+func NotifyTaskKey(requestID int64) string { return "notify:req:" + strconv.FormatInt(requestID, 10) }
+
+// ListFlowTasks returns up to limit tasks of one kind in one status, oldest
+// first — the dead-letter view the notify reviver works from.
+func (s *Store) ListFlowTasks(ctx context.Context, kind, status string, limit int) ([]FlowTask, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kind, COALESCE(target_type,''), COALESCE(target_id,0), COALESCE(payload,''), attempts
+		FROM flow_tasks WHERE kind = ? AND status = ? ORDER BY id LIMIT ?`, kind, status, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FlowTask
+	for rows.Next() {
+		var t FlowTask
+		if err := rows.Scan(&t.ID, &t.Kind, &t.TargetType, &t.TargetID, &t.Payload, &t.Attempts); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // EnqueueFlowTask appends a task. A non-empty dedupeKey coalesces re-triggers:
@@ -146,7 +172,7 @@ func (s *Store) ClearStuckItem(ctx context.Context, itemID int64) error {
 // ReapFlowTasks prunes finished tasks past the retention window.
 func (s *Store) ReapFlowTasks(ctx context.Context, olderThanDays int) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
-		DELETE FROM flow_tasks WHERE status IN ('done','failed')
+		DELETE FROM flow_tasks WHERE status IN ('done','failed','revived')
 		AND finished_at < datetime('now', ?)`, "-"+itoa(olderThanDays)+" days")
 	if err != nil {
 		return 0, err

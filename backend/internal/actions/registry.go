@@ -65,6 +65,13 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 				Kind: "cancel", Scope: "request", RequestID: targetID, Danger: true,
 			})
 		}
+		// Items that completed but were never announced (notifier outage).
+		if len(a.Reg.WithCapability(registry.CapNotifySend)) > 0 && a.hasUnannounced(ctx, targetID) {
+			out = append(out, Descriptor{
+				ID: fmt.Sprintf("resend-notify:%d", targetID), Label: "Resend notification",
+				Kind: "resend-notify", Scope: "request", RequestID: targetID,
+			})
+		}
 		// Per-season search for tv requests (only when Sonarr can search).
 		if len(a.Reg.WithCapability(registry.CapSeasonSearch)) > 0 {
 			items, _ := a.Store.ListItemsForRequest(ctx, targetID)
@@ -106,6 +113,8 @@ func (a *Actions) Execute(ctx context.Context, kind string, params map[string]an
 		return a.Retry(ctx, pInt(params, "media_item_id"))
 	case "season-search":
 		return a.SeasonSearch(ctx, pInt(params, "request_id"), pInt(params, "season"))
+	case "resend-notify":
+		return a.ResendNotify(ctx, pInt(params, "request_id"))
 	default:
 		return fmt.Errorf("unknown action %q", kind)
 	}
