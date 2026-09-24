@@ -17,7 +17,7 @@
 		"@tailwindcss/vite": "^4.3.3",
 		"clsx": "^2.1.1",
 		"svelte": "^5.20.0",
-		"svelte-check": "^4.1.0",
+		"svelte-check": "^4.7.6",
 		"tailwind-merge": "^3.7.0",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^5.7.0",
