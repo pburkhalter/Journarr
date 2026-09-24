@@ -220,7 +220,7 @@ func run() error {
 	// stage transitions via projector.OnStage and drains durable flow_tasks with
 	// retry/backoff. All settings default off, so behavior is unchanged until a
 	// user enables one in the Flow menu.
-	flowCtrl := flow.New(st, log, acts, cfg.StuckPollInterval)
+	flowCtrl := flow.New(st, log, acts, cfg.FlowTickInterval)
 	flowCtrl.Wake = projector.Wake
 	// Notify-on-complete needs notifyarr + its /notify/send token; without both,
 	// the setting is inert (enqueued notify tasks fail-and-exhaust harmlessly).

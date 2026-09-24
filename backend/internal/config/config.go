@@ -31,8 +31,15 @@ type Config struct {
 	JellyfinPollInterval time.Duration `env:"JELLYFIN_POLL_INTERVAL" envDefault:"2m"`
 	PresencePollInterval time.Duration `env:"PRESENCE_POLL_INTERVAL" envDefault:"10m"`
 	StuckPollInterval    time.Duration `env:"STUCK_POLL_INTERVAL" envDefault:"5m"`
-	UpdateCheckInterval  time.Duration `env:"UPDATE_CHECK_INTERVAL" envDefault:"6h"`
-	EventsRetentionDays  int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
+
+	// FlowTickInterval paces the control-plane (notify, jellyfin_scan, retry
+	// tasks). Its delays (60s notify grouping, 45s scan coalescing) assume a
+	// tick well below them; on the 5m stuck interval every notice arrived
+	// exactly five minutes after the item became available.
+	FlowTickInterval time.Duration `env:"FLOW_TICK_INTERVAL" envDefault:"20s"`
+
+	UpdateCheckInterval time.Duration `env:"UPDATE_CHECK_INTERVAL" envDefault:"6h"`
+	EventsRetentionDays int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
 
 	// Services with an empty URL are simply not monitored/ingested.
 	SeerrURL    string `env:"SEERR_URL"`
