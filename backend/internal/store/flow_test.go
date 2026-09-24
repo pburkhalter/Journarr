@@ -66,7 +66,7 @@ func TestFlowTaskReschedule(t *testing.T) {
 	ctx := context.Background()
 	s := openTestStore(t)
 
-	s.EnqueueFlowTask(ctx, "retry", "media_item", 7, "", "retry:7:1", time.Now())
+	_, _ = s.EnqueueFlowTask(ctx, "retry", "media_item", 7, "", "retry:7:1", time.Now())
 	tasks, _ := s.ClaimFlowTasks(ctx, 10)
 	if len(tasks) != 1 {
 		t.Fatalf("want 1, got %d", len(tasks))
@@ -92,7 +92,7 @@ func TestFlowSettingsUpsert(t *testing.T) {
 		t.Fatalf("setting not persisted: %v", m)
 	}
 	// Upsert to a new value.
-	s.SetFlowSetting(ctx, "notify_on_complete", "false")
+	_ = s.SetFlowSetting(ctx, "notify_on_complete", "false")
 	m, _ = s.GetFlowSettings(ctx)
 	if m["notify_on_complete"] != "false" {
 		t.Fatalf("upsert failed: %v", m)

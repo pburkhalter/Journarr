@@ -23,6 +23,29 @@ jobs:
       - run: go test -race -count=1 ./...
         working-directory: backend
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          working-directory: backend
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.25"
+          work-dir: backend
+          go-package: ./...
+
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -36,3 +59,10 @@ jobs:
         working-directory: frontend
       - run: npm run check
         working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      # The built frontend is committed (backend/internal/web/dist) and
+      # embedded into the binary. A stale commit means the image ships an
+      # older UI than the source; this step makes that visible.
+      - name: committed frontend build is current
+        run: git diff --exit-code --stat -- backend/internal/web/dist
