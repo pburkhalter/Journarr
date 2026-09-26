@@ -177,7 +177,7 @@ func run() error {
 		}).Run(ctx)
 	}
 
-	// Daily events reaper.
+	// Daily reaper: events, and tombstones of removed titles.
 	go func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()
@@ -188,6 +188,9 @@ func run() error {
 			case <-t.C:
 				if n, err := st.ReapEvents(ctx, cfg.EventsRetentionDays); err == nil && n > 0 {
 					log.Info("reaper: pruned events", "count", n)
+				}
+				if n, err := st.ReapRemoved(ctx, 30); err == nil && n > 0 {
+					log.Info("reaper: pruned removal tombstones", "count", n)
 				}
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -83,6 +84,20 @@ func (c *Jellyfin) SeriesTvdbID(ctx context.Context, seriesID string) (int64, er
 		return 0, fmt.Errorf("series %s not found", seriesID)
 	}
 	return parseProviderID(out.Items[0].ProviderIds, "Tvdb"), nil
+}
+
+// ItemsByName finds Series and Movies whose name matches term, with their
+// paths — used to check that a removed title left the library.
+func (c *Jellyfin) ItemsByName(ctx context.Context, term string) ([]JellyItem, error) {
+	u := c.itemsBase() + "?Recursive=true&IncludeItemTypes=Series,Movie&Fields=Path,ProviderIds&Limit=50" +
+		"&SearchTerm=" + url.QueryEscape(term)
+	var out struct {
+		Items []JellyItem `json:"Items"`
+	}
+	if _, err := getJSON(ctx, c.HTTP, u, c.headers(), &out); err != nil {
+		return nil, err
+	}
+	return out.Items, nil
 }
 
 // RefreshLibrary triggers a full library scan.
@@ -166,6 +181,10 @@ type JellySession struct {
 	Paused      bool   `json:"paused"`
 	PlayMethod  string `json:"play_method"` // DirectPlay|DirectStream|Transcode
 	RemoteIP    string `json:"remote_ip,omitempty"`
+	// For matching a session to a title (not sent to the UI).
+	Path       string `json:"-"`
+	SeriesName string `json:"-"`
+	ItemName   string `json:"-"`
 }
 
 // Sessions returns the currently-playing Jellyfin sessions (those with a
@@ -180,6 +199,7 @@ func (c *Jellyfin) Sessions(ctx context.Context) ([]JellySession, error) {
 		NowPlayingItem *struct {
 			Name              string `json:"Name"`
 			Type              string `json:"Type"`
+			Path              string `json:"Path"`
 			SeriesName        string `json:"SeriesName"`
 			ParentIndexNumber *int   `json:"ParentIndexNumber"`
 			IndexNumber       *int   `json:"IndexNumber"`
@@ -217,6 +237,9 @@ func (c *Jellyfin) Sessions(ctx context.Context) ([]JellySession, error) {
 			Paused:      s.PlayState.IsPaused,
 			PlayMethod:  s.PlayState.PlayMethod,
 			RemoteIP:    s.RemoteEndPoint,
+			Path:        np.Path,
+			SeriesName:  np.SeriesName,
+			ItemName:    np.Name,
 		})
 	}
 	return out, nil

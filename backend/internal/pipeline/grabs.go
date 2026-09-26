@@ -120,7 +120,19 @@ func (p *Projector) resolveMovieItem(ctx context.Context, movie *MovieRef) (*sto
 	return item, reqID
 }
 
+// removed reports whether the series/movie was removed everywhere by the
+// user; late grab/import/failure events for it must not recreate it.
+func (p *Projector) removed(ctx context.Context, series *SeriesRef, movie *MovieRef) bool {
+	if series != nil && p.Store.IsArrRemoved(ctx, "sonarr", series.SonarrID) {
+		return true
+	}
+	return movie != nil && p.Store.IsArrRemoved(ctx, "radarr", movie.RadarrID)
+}
+
 func (p *Projector) applyGrab(ctx context.Context, eventID int64, op GrabOp) (string, int64, int64, int64) {
+	if p.removed(ctx, op.Series, op.Movie) {
+		return "ignored", 0, 0, 0
+	}
 	var items []*store.MediaItem
 	var reqID int64
 	if op.Arr == "sonarr" {
@@ -199,6 +211,9 @@ func (p *Projector) applyGrab(ctx context.Context, eventID int64, op GrabOp) (st
 }
 
 func (p *Projector) applyImport(ctx context.Context, eventID int64, op ImportOp) (string, int64, int64, int64) {
+	if p.removed(ctx, op.Series, op.Movie) {
+		return "ignored", 0, 0, 0
+	}
 	dlKey := store.NormalizeDownloadID(op.DownloadID)
 
 	// importOne applies 'imported' to the cycle the download is linked to —
@@ -261,6 +276,9 @@ func (p *Projector) applyImport(ctx context.Context, eventID int64, op ImportOp)
 }
 
 func (p *Projector) applyFailure(ctx context.Context, eventID int64, op FailureOp) (string, int64, int64, int64) {
+	if p.removed(ctx, op.Series, op.Movie) {
+		return "ignored", 0, 0, 0
+	}
 	msg := op.Message
 	if msg == "" {
 		msg = "download failed"

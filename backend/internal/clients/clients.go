@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -74,4 +75,9 @@ func down(lat time.Duration, err error) HealthResult {
 		Latency: lat,
 		Detail:  map[string]any{"error": err.Error()},
 	}
+}
+
+// isNotFound reports whether getJSON failed with a 404.
+func isNotFound(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "status 404")
 }

@@ -185,6 +185,30 @@ export interface RawEvent {
 	received_at: string;
 }
 
+// What "Remove everywhere" would delete (GET /api/requests/{id}/removal).
+export interface RemovalPlan {
+	request_id: number;
+	title: string;
+	media_type: 'movie' | 'tv';
+	requests: number;
+	arr?: string;
+	arr_id?: number;
+	path?: string;
+	files: number;
+	size_bytes: number;
+	seasons?: number;
+	downloads: string[];
+	in_seerr: boolean;
+	viewers: string[];
+	warnings: string[];
+}
+
+export interface RemovalStep {
+	step: string;
+	status: 'ok' | 'skipped' | 'warning' | 'failed';
+	detail?: string;
+}
+
 export interface Me {
 	auth_enabled: boolean;
 	user?: {

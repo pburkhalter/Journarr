@@ -1,11 +1,14 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		cancelRequest,
 		executeAction,
 		getActions,
 		getMediaEvents,
+		getRemovalPlan,
 		getRequestDetail,
+		removeTitle,
 		retryItem
 	} from '$lib/api';
 	import StageBadge from '$lib/components/StageBadge.svelte';
@@ -34,6 +37,72 @@
 			await loadDetail(id);
 		} catch {
 			actionMsg = 'Cancel failed';
+		} finally {
+			busy = false;
+		}
+	}
+
+	function gib(bytes: number): string {
+		return bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB` : `${Math.round(bytes / (1 << 20))} MB`;
+	}
+
+	// Remove everywhere: preview first, then delete the series/movie in
+	// Sonarr/Radarr (with files), Seerr, Jellyfin, the download client and here.
+	async function doRemove() {
+		if (!detail) return;
+		busy = true;
+		actionMsg = '';
+		let plan;
+		try {
+			plan = await getRemovalPlan(id);
+		} catch {
+			actionMsg = 'Could not prepare the removal';
+			busy = false;
+			return;
+		}
+		busy = false;
+		const arrName = plan.arr === 'sonarr' ? 'Sonarr' : 'Radarr';
+		const details: string[] = [];
+		if (plan.arr_id) {
+			const what =
+				plan.media_type === 'tv'
+					? `${plan.files} episode file(s) in ${plan.seasons ?? 0} season(s)`
+					: plan.files
+						? '1 movie file'
+						: 'no file yet';
+			details.push(`${arrName}: series/movie and ${what}, ${gib(plan.size_bytes)} (recycle bin, 7 days)`);
+			if (plan.path) details.push(`Folder: ${plan.path}`);
+		} else {
+			details.push(`Not in ${arrName}`);
+		}
+		if (plan.downloads.length) details.push(`Running downloads stopped and deleted: ${plan.downloads.join(', ')}`);
+		details.push(plan.in_seerr ? 'Seerr: request(s) removed, title can be requested again' : 'Not in Seerr');
+		details.push(`Journarr: ${plan.requests} request(s) and their history`);
+		for (const w of plan.warnings) details.push(`⚠ ${w}`);
+		const watching = plan.viewers.length > 0;
+		if (watching) details.push(`Watching now: ${plan.viewers.join(', ')}`);
+
+		const ok = await confirm.ask({
+			title: watching ? 'Someone is watching this' : 'Remove everywhere',
+			message: `Delete "${plan.title}" from every system? Works whether it is still downloading or long finished.`,
+			details,
+			confirmLabel: watching ? 'Remove anyway' : 'Remove everywhere',
+			danger: true
+		});
+		if (!ok) return;
+		busy = true;
+		try {
+			const res = await removeTitle(id, watching);
+			if (res.ok) {
+				await goto('/');
+				return;
+			}
+			actionMsg = res.watching
+				? 'Someone started watching it — nothing was removed. Try again.'
+				: `Removal stopped: ${res.error ?? 'unknown error'}`;
+			await loadDetail(id);
+		} catch {
+			actionMsg = 'Removal failed';
 		} finally {
 			busy = false;
 		}
@@ -211,25 +280,35 @@
 					{detail.request.title}
 					{#if detail.request.year}<span class="font-normal text-muted-foreground">({detail.request.year})</span>{/if}
 				</h1>
-				{#if resendAction}
+				<div class="flex shrink-0 flex-wrap justify-end gap-2">
+					{#if resendAction}
+						<button
+							onclick={doResend}
+							disabled={busy}
+							title="Items completed but were never announced — send the notice now"
+							class="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+						>
+							Resend notification
+						</button>
+					{/if}
+					{#if detail.request.status === 'active' || detail.request.status === 'partial'}
+						<button
+							onclick={doCancel}
+							disabled={busy}
+							class="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+						>
+							Cancel request
+						</button>
+					{/if}
 					<button
-						onclick={doResend}
+						onclick={doRemove}
 						disabled={busy}
-						title="Items completed but were never announced — send the notice now"
-						class="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+						title="Delete the series/movie in Sonarr/Radarr with its files, in Seerr, Jellyfin, the download client and here"
+						class="shrink-0 rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
 					>
-						Resend notification
+						Remove everywhere
 					</button>
-				{/if}
-				{#if detail.request.status === 'active' || detail.request.status === 'partial'}
-					<button
-						onclick={doCancel}
-						disabled={busy}
-						class="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-					>
-						Cancel request
-					</button>
-				{/if}
+				</div>
 			</div>
 			<div class="mt-1 text-xs text-muted-foreground">
 				{detail.request.media_type === 'tv' ? 'Series' : 'Movie'}

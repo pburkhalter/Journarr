@@ -8,7 +8,7 @@ import (
 
 // applySeerr folds a request lifecycle signal into the request + items.
 func (p *Projector) applySeerr(ctx context.Context, eventID int64, op SeerrOp) (string, int64, int64, int64) {
-	if op.SeerrRequestID == 0 {
+	if op.SeerrRequestID == 0 || p.Store.IsSeerrRequestRemoved(ctx, op.SeerrRequestID) {
 		return "ignored", 0, 0, 0
 	}
 	seerrID := op.SeerrRequestID

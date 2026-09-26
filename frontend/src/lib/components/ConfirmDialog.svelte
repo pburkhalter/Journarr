@@ -12,9 +12,16 @@
 			aria-label="Dismiss"
 			onclick={() => confirm.resolve(false)}
 		></button>
-		<div class="relative w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl" role="dialog" aria-modal="true">
+		<div class="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl" role="dialog" aria-modal="true">
 			<h2 class="text-sm font-semibold">{confirm.title}</h2>
 			<p class="mt-2 text-xs text-muted-foreground">{confirm.message}</p>
+			{#if confirm.details.length}
+				<ul class="mt-3 space-y-1 text-xs">
+					{#each confirm.details as d, i (i)}
+						<li class="flex gap-1.5"><span class="text-muted-foreground">•</span><span>{d}</span></li>
+					{/each}
+				</ul>
+			{/if}
 			<div class="mt-5 flex justify-end gap-2">
 				<button
 					onclick={() => confirm.resolve(false)}

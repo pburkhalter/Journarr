@@ -4,6 +4,8 @@ import type {
 	Instance,
 	Me,
 	RawEvent,
+	RemovalPlan,
+	RemovalStep,
 	RequestDetail,
 	RequestRollup,
 	ServiceHealth,
@@ -87,6 +89,29 @@ async function post(path: string, body?: unknown): Promise<void> {
 export const retryItem = (mediaItemID: number) => post('/api/actions/retry', { media_item_id: mediaItemID });
 export const cancelRequest = (requestID: number) => post('/api/actions/cancel', { request_id: requestID });
 export const jellyfinScan = () => post('/api/actions/jellyfin-scan');
+
+export async function getRemovalPlan(requestID: number): Promise<RemovalPlan> {
+	return get<RemovalPlan>(`/api/requests/${requestID}/removal`);
+}
+
+// removeTitle deletes the request's series/movie everywhere. A 409 means
+// someone is watching it; `force` overrides that.
+export async function removeTitle(
+	requestID: number,
+	force = false
+): Promise<{ ok: boolean; watching: boolean; error?: string; steps: RemovalStep[] }> {
+	const res = await fetch('/api/actions/remove', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ request_id: requestID, force })
+	});
+	if (res.status === 401) {
+		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
+		throw new Error('unauthenticated');
+	}
+	const body = (await res.json().catch(() => ({}))) as { error?: string; steps?: RemovalStep[] };
+	return { ok: res.ok, watching: res.status === 409, error: body.error, steps: body.steps ?? [] };
+}
 
 export async function getActions(scope = 'global', targetId?: number): Promise<Action[]> {
 	const params = new URLSearchParams({ scope });

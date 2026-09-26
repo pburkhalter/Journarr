@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -269,6 +270,25 @@ func NewRouter(d Deps) http.Handler {
 				})
 			})
 
+			// What "Remove everywhere" would delete, for the confirmation dialog.
+			r.Get("/requests/{id}/removal", func(w http.ResponseWriter, req *http.Request) {
+				id, err := strconv.ParseInt(chi.URLParam(req, "id"), 10, 64)
+				if err != nil {
+					http.Error(w, "bad id", http.StatusBadRequest)
+					return
+				}
+				if r, _ := d.Store.GetRequest(req.Context(), id); r == nil {
+					http.Error(w, "not found", http.StatusNotFound)
+					return
+				}
+				plan, err := d.Actions.PlanRemoval(req.Context(), id)
+				if err != nil {
+					httpError(w, d.Log, "plan removal", err)
+					return
+				}
+				writeJSON(w, plan)
+			})
+
 			// Capability-derived action catalog for the Actions tab / detail view.
 			r.Get("/actions", func(w http.ResponseWriter, req *http.Request) {
 				scope := req.URL.Query().Get("scope")
@@ -336,6 +356,32 @@ func NewRouter(d Deps) http.Handler {
 					return
 				}
 				writeJSON(w, map[string]string{"status": "ok"})
+			})
+
+			r.Post("/actions/remove", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					RequestID int64 `json:"request_id"`
+					Force     bool  `json:"force"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.RequestID == 0 {
+					http.Error(w, "request_id required", http.StatusBadRequest)
+					return
+				}
+				actx, cancel := detach()
+				defer cancel()
+				steps, err := d.Actions.Remove(actx, body.RequestID, body.Force)
+				if err != nil {
+					status := http.StatusInternalServerError
+					if errors.Is(err, actions.ErrBeingWatched) {
+						status = http.StatusConflict
+					}
+					d.Log.Warn("remove", "request", body.RequestID, "err", err)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error(), "steps": steps})
+					return
+				}
+				writeJSON(w, map[string]any{"status": "ok", "steps": steps})
 			})
 
 			r.Get("/media/{id}/events", func(w http.ResponseWriter, req *http.Request) {

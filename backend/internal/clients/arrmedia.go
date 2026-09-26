@@ -22,6 +22,12 @@ type Series struct {
 	TitleSlug  string `json:"titleSlug"`
 	Status     string `json:"status"`     // continuing | ended | upcoming
 	NextAiring string `json:"nextAiring"` // ISO8601 of the next unaired monitored episode (empty if none)
+	Path       string `json:"path"`
+	Statistics struct {
+		SeasonCount      int64 `json:"seasonCount"`
+		EpisodeFileCount int64 `json:"episodeFileCount"`
+		SizeOnDisk       int64 `json:"sizeOnDisk"`
+	} `json:"statistics"`
 }
 
 type Episode struct {
@@ -36,11 +42,13 @@ type Episode struct {
 }
 
 type Movie struct {
-	ID      int64  `json:"id"`
-	Title   string `json:"title"`
-	TmdbID  int64  `json:"tmdbId"`
-	Year    int64  `json:"year"`
-	HasFile bool   `json:"hasFile"` // movie file already on disk / imported
+	ID         int64  `json:"id"`
+	Title      string `json:"title"`
+	TmdbID     int64  `json:"tmdbId"`
+	Year       int64  `json:"year"`
+	HasFile    bool   `json:"hasFile"` // movie file already on disk / imported
+	Path       string `json:"path"`
+	SizeOnDisk int64  `json:"sizeOnDisk"`
 }
 
 // MovieByID fetches a single Radarr movie (for hasFile reconciliation).
@@ -51,6 +59,52 @@ func (c *Arr) MovieByID(ctx context.Context, id int64) (*Movie, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// SeriesByID fetches a single Sonarr series; nil when it does not exist.
+func (c *Arr) SeriesByID(ctx context.Context, id int64) (*Series, error) {
+	var sr Series
+	if _, err := getJSON(ctx, c.HTTP,
+		fmt.Sprintf("%s%s/series/%d", c.BaseURL, c.APIBase, id), c.headers(), &sr); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &sr, nil
+}
+
+// DeleteSeries removes a series from Sonarr together with its files (they go
+// to Sonarr's recycle bin when one is configured). No import-list exclusion:
+// a later request must be able to add it again. Already gone = success.
+func (c *Arr) DeleteSeries(ctx context.Context, id int64) error {
+	return c.deleteMedia(ctx, fmt.Sprintf("%s%s/series/%d?deleteFiles=true&addImportListExclusion=false",
+		c.BaseURL, c.APIBase, id))
+}
+
+// DeleteMovie is DeleteSeries for Radarr.
+func (c *Arr) DeleteMovie(ctx context.Context, id int64) error {
+	return c.deleteMedia(ctx, fmt.Sprintf("%s%s/movie/%d?deleteFiles=true&addImportExclusion=false",
+		c.BaseURL, c.APIBase, id))
+}
+
+func (c *Arr) deleteMedia(ctx context.Context, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	for k, v := range c.headers() {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("%s delete: status %d", c.Name, resp.StatusCode)
+	}
+	return nil
 }
 
 // SeriesByTvdbID returns nil when the series is not (yet) in Sonarr.

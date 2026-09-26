@@ -51,6 +51,7 @@ class LiveStore {
 		};
 		this.es.addEventListener('media.stage', bump);
 		this.es.addEventListener('request.updated', bump);
+		this.es.addEventListener('request.removed', bump);
 		this.es.addEventListener('download.progress', (e) => {
 			try {
 				const p = JSON.parse((e as MessageEvent).data) as {

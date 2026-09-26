@@ -125,10 +125,38 @@ func itoa64(n int64) string {
 	return string(b[i:])
 }
 
-// DeleteRequest removes a Seerr request (used by the cancel action).
-func (c *Seerr) DeleteRequest(ctx context.Context, id int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
-		c.BaseURL+"/api/v1/request/"+itoa64(id), nil)
+// MediaID returns Seerr's own media id for a title (0 when Seerr has no media
+// entry for it, i.e. it was never requested or already removed).
+func (c *Seerr) MediaID(ctx context.Context, mediaType string, tmdbID int64) (int64, error) {
+	kind := "movie"
+	if mediaType == "tv" {
+		kind = "tv"
+	}
+	var body struct {
+		MediaInfo *struct {
+			ID int64 `json:"id"`
+		} `json:"mediaInfo"`
+	}
+	if _, err := getJSON(ctx, c.HTTP, c.BaseURL+"/api/v1/"+kind+"/"+itoa64(tmdbID), c.headers(), &body); err != nil {
+		if isNotFound(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if body.MediaInfo == nil {
+		return 0, nil
+	}
+	return body.MediaInfo.ID, nil
+}
+
+// DeleteMedia removes Seerr's media entry with all its requests, so the title
+// shows as not requested again. Seerr answers 204 also for an unknown id.
+func (c *Seerr) DeleteMedia(ctx context.Context, mediaID int64) error {
+	return c.delete(ctx, c.BaseURL+"/api/v1/media/"+itoa64(mediaID))
+}
+
+func (c *Seerr) delete(ctx context.Context, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
@@ -145,6 +173,11 @@ func (c *Seerr) DeleteRequest(ctx context.Context, id int64) error {
 		return &APIError{Status: resp.StatusCode}
 	}
 	return nil
+}
+
+// DeleteRequest removes a Seerr request (used by the cancel action).
+func (c *Seerr) DeleteRequest(ctx context.Context, id int64) error {
+	return c.delete(ctx, c.BaseURL+"/api/v1/request/"+itoa64(id))
 }
 
 func (c *Seerr) CheckHealth(ctx context.Context) HealthResult {

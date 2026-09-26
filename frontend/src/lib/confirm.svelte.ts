@@ -5,15 +5,23 @@ class ConfirmStore {
 	open = $state(false);
 	title = $state('');
 	message = $state('');
+	details = $state<string[]>([]);
 	confirmLabel = $state('Confirm');
 	danger = $state(false);
 	busy = $state(false);
 
 	private resolver: ((v: boolean) => void) | null = null;
 
-	ask(o: { title: string; message: string; confirmLabel?: string; danger?: boolean }): Promise<boolean> {
+	ask(o: {
+		title: string;
+		message: string;
+		details?: string[];
+		confirmLabel?: string;
+		danger?: boolean;
+	}): Promise<boolean> {
 		this.title = o.title;
 		this.message = o.message;
+		this.details = o.details ?? [];
 		this.confirmLabel = o.confirmLabel ?? 'Confirm';
 		this.danger = !!o.danger;
 		this.busy = false;
