@@ -74,6 +74,20 @@ func (c *Arr) SeriesByID(ctx context.Context, id int64) (*Series, error) {
 	return &sr, nil
 }
 
+// RecycleBin returns where Sonarr/Radarr move deleted files and after how
+// many days they empty it; "" means files are deleted for good.
+func (c *Arr) RecycleBin(ctx context.Context) (path string, cleanupDays int, err error) {
+	var cfg struct {
+		RecycleBin            string `json:"recycleBin"`
+		RecycleBinCleanupDays int    `json:"recycleBinCleanupDays"`
+	}
+	if _, err := getJSON(ctx, c.HTTP, fmt.Sprintf("%s%s/config/mediamanagement", c.BaseURL, c.APIBase),
+		c.headers(), &cfg); err != nil {
+		return "", 0, err
+	}
+	return cfg.RecycleBin, cfg.RecycleBinCleanupDays, nil
+}
+
 // DeleteSeries removes a series from Sonarr together with its files (they go
 // to Sonarr's recycle bin when one is configured). No import-list exclusion:
 // a later request must be able to add it again. Already gone = success.

@@ -70,7 +70,10 @@
 					: plan.files
 						? '1 movie file'
 						: 'no file yet';
-			details.push(`${arrName}: series/movie and ${what}, ${gib(plan.size_bytes)} (recycle bin, 7 days)`);
+			const bin = plan.recycle_bin
+				? `to the recycle bin, emptied after ${plan.recycle_days || '?'} days`
+				: 'deleted for good — no recycle bin set';
+			details.push(`${arrName}: series/movie and ${what}, ${gib(plan.size_bytes)} (${bin})`);
 			if (plan.path) details.push(`Folder: ${plan.path}`);
 		} else {
 			details.push(`Not in ${arrName}`);

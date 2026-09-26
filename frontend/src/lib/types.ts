@@ -199,6 +199,8 @@ export interface RemovalPlan {
 	seasons?: number;
 	downloads: string[];
 	in_seerr: boolean;
+	recycle_bin: string; // '' = files are deleted for good
+	recycle_days: number;
 	viewers: string[];
 	warnings: string[];
 }

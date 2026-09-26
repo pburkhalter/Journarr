@@ -37,26 +37,30 @@ var removeSettle = 5 * time.Second
 // RemovalPlan describes what a removal would delete (the confirmation
 // dialog) and carries the ids Remove needs.
 type RemovalPlan struct {
-	RequestID  int64    `json:"request_id"`
-	Title      string   `json:"title"`
-	MediaType  string   `json:"media_type"`
-	Requests   int      `json:"requests"` // Journarr requests for this title
-	Arr        string   `json:"arr,omitempty"`
-	ArrID      int64    `json:"arr_id,omitempty"`
-	Path       string   `json:"path,omitempty"`
-	Files      int64    `json:"files"`
-	SizeBytes  int64    `json:"size_bytes"`
-	Seasons    int64    `json:"seasons,omitempty"`
-	Downloads  []string `json:"downloads"` // queue entries that will be stopped
-	InSeerr    bool     `json:"in_seerr"`
-	Viewers    []string `json:"viewers"`
-	Warnings   []string `json:"warnings"`
-	requestIDs []int64
-	seerrIDs   []int64
-	seerrMedia int64
-	arrIDs     []int64 // every Sonarr series / Radarr movie id seen on the items
-	queueIDs   []int64
-	tmdbID     int64
+	RequestID int64    `json:"request_id"`
+	Title     string   `json:"title"`
+	MediaType string   `json:"media_type"`
+	Requests  int      `json:"requests"` // Journarr requests for this title
+	Arr       string   `json:"arr,omitempty"`
+	ArrID     int64    `json:"arr_id,omitempty"`
+	Path      string   `json:"path,omitempty"`
+	Files     int64    `json:"files"`
+	SizeBytes int64    `json:"size_bytes"`
+	Seasons   int64    `json:"seasons,omitempty"`
+	Downloads []string `json:"downloads"` // queue entries that will be stopped
+	InSeerr   bool     `json:"in_seerr"`
+	// RecycleBin is where Sonarr/Radarr move the files ("" = deleted for
+	// good), emptied after RecycleDays.
+	RecycleBin  string   `json:"recycle_bin"`
+	RecycleDays int      `json:"recycle_days"`
+	Viewers     []string `json:"viewers"`
+	Warnings    []string `json:"warnings"`
+	requestIDs  []int64
+	seerrIDs    []int64
+	seerrMedia  int64
+	arrIDs      []int64 // every Sonarr series / Radarr movie id seen on the items
+	queueIDs    []int64
+	tmdbID      int64
 }
 
 // RemovalStep is one line of the result.
@@ -164,6 +168,11 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 	}
 
 	if arr := a.arrFor(req.MediaType, ""); arr != nil && p.ArrID != 0 {
+		if bin, days, err := arr.RecycleBin(ctx); err == nil {
+			p.RecycleBin, p.RecycleDays = bin, days
+		} else {
+			p.Warnings = append(p.Warnings, "recycle bin setting unknown: "+err.Error())
+		}
 		queue, err := arr.Queue(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("%s queue: %w", p.Arr, err)

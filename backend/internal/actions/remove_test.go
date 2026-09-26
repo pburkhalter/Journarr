@@ -45,6 +45,8 @@ func (f *fakeStack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = io.WriteString(w, `[{"id":9,"title":"Show","tvdbId":555,"path":"/media/tv/Show",
 			"statistics":{"seasonCount":2,"episodeFileCount":20,"sizeOnDisk":21474836480}}]`)
+	case r.URL.Path == "/api/v3/config/mediamanagement":
+		_, _ = io.WriteString(w, `{"recycleBin":"/media/.recycle/sonarr","recycleBinCleanupDays":7}`)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v3/queue":
 		if f.deleted {
 			_, _ = io.WriteString(w, `{"records":[],"totalRecords":0}`)
@@ -125,7 +127,8 @@ func TestRemoveDeletesTitleEverywhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ArrID != 9 || plan.Files != 20 || len(plan.Downloads) != 1 || !plan.InSeerr {
+	if plan.ArrID != 9 || plan.Files != 20 || len(plan.Downloads) != 1 || !plan.InSeerr ||
+		plan.RecycleBin != "/media/.recycle/sonarr" || plan.RecycleDays != 7 || len(plan.Warnings) != 0 {
 		t.Fatalf("plan = %+v", plan)
 	}
 
