@@ -205,6 +205,7 @@ func run() error {
 		AllowedGroups: cfg.OIDCAllowedGroups,
 		SessionSecret: cfg.SessionSecret,
 		SessionMaxAge: cfg.SessionMaxAge,
+		APIToken:      cfg.APIToken,
 	}, log)
 	if authn.Enabled() {
 		log.Info("sso enabled", "issuer", cfg.OIDCIssuerURL, "public_url", cfg.PublicURL)

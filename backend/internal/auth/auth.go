@@ -10,6 +10,7 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
@@ -41,6 +42,10 @@ type Config struct {
 	AllowedGroups []string // empty = anyone the provider authenticates
 	SessionSecret string
 	SessionMaxAge time.Duration
+	// APIToken, when set, is accepted as "Authorization: Bearer <token>" in
+	// place of a session — for scripts. Header only: a query parameter would
+	// end up in proxy logs.
+	APIToken string
 }
 
 type User struct {
@@ -252,6 +257,9 @@ func (a *Auth) UserFrom(r *http.Request) (*User, bool) {
 	if !a.Enabled() {
 		return nil, true
 	}
+	if a.tokenOK(r) {
+		return &User{Subject: "api-token", Name: "API token"}, true
+	}
 	sess, err := a.store.Get(r, sessionName)
 	if err != nil || sess.IsNew {
 		return nil, false
@@ -261,6 +269,15 @@ func (a *Auth) UserFrom(r *http.Request) (*User, bool) {
 		return nil, false
 	}
 	return u, true
+}
+
+// tokenOK reports whether the request carries the configured API token.
+func (a *Auth) tokenOK(r *http.Request) bool {
+	if a.cfg.APIToken == "" {
+		return false
+	}
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return ok && subtle.ConstantTimeCompare([]byte(got), []byte(a.cfg.APIToken)) == 1
 }
 
 // RequireAPI rejects unauthenticated API calls with 401 JSON.

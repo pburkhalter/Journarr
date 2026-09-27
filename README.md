@@ -76,7 +76,12 @@ OIDC_CLIENT_ID=…
 OIDC_CLIENT_SECRET=…
 SESSION_SECRET=$(openssl rand -hex 32)
 OIDC_ALLOWED_GROUPS=journarr-users                 # optional
+JOURNARR_API_TOKEN=$(openssl rand -hex 32)         # optional, for scripts
 ```
+
+With `JOURNARR_API_TOKEN` set, scripts call the API with
+`Authorization: Bearer <token>` instead of a login session, e.g.
+`curl -H "Authorization: Bearer $TOKEN" $JOURNARR_PUBLIC_URL/api/requests`.
 
 Register the client in your IdP with callback URL
 `$JOURNARR_PUBLIC_URL/auth/callback`. `/healthz` and (later) `/webhook/*`

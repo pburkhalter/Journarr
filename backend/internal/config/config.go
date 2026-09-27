@@ -79,14 +79,17 @@ type Config struct {
 
 	// SSO via OIDC (Pocket ID, Authentik, …). Setting OIDC_ISSUER_URL turns
 	// it on; without it Journarr is open (LAN mode).
-	PublicURL         string        `env:"JOURNARR_PUBLIC_URL"`
-	OIDCIssuerURL     string        `env:"OIDC_ISSUER_URL"`
-	OIDCClientID      string        `env:"OIDC_CLIENT_ID"`
-	OIDCClientSecret  string        `env:"OIDC_CLIENT_SECRET"`
-	OIDCScopes        []string      `env:"OIDC_SCOPES" envSeparator:"," envDefault:"openid,profile,email,groups"`
-	OIDCAllowedGroups []string      `env:"OIDC_ALLOWED_GROUPS" envSeparator:","`
-	SessionSecret     string        `env:"SESSION_SECRET"`
-	SessionMaxAge     time.Duration `env:"SESSION_MAX_AGE" envDefault:"168h"`
+	PublicURL         string   `env:"JOURNARR_PUBLIC_URL"`
+	OIDCIssuerURL     string   `env:"OIDC_ISSUER_URL"`
+	OIDCClientID      string   `env:"OIDC_CLIENT_ID"`
+	OIDCClientSecret  string   `env:"OIDC_CLIENT_SECRET"`
+	OIDCScopes        []string `env:"OIDC_SCOPES" envSeparator:"," envDefault:"openid,profile,email,groups"`
+	OIDCAllowedGroups []string `env:"OIDC_ALLOWED_GROUPS" envSeparator:","`
+	SessionSecret     string   `env:"SESSION_SECRET"`
+	// APIToken lets scripts call /api with "Authorization: Bearer <token>"
+	// when SSO is on. Empty = sessions only.
+	APIToken      string        `env:"JOURNARR_API_TOKEN"`
+	SessionMaxAge time.Duration `env:"SESSION_MAX_AGE" envDefault:"168h"`
 }
 
 func (c *Config) SSOEnabled() bool { return c.OIDCIssuerURL != "" }
@@ -167,6 +170,9 @@ func Load() (*Config, error) {
 		}
 		if len(c.SessionSecret) < 16 {
 			return nil, fmt.Errorf("OIDC_ISSUER_URL set — SESSION_SECRET of >= 16 chars is required")
+		}
+		if c.APIToken != "" && len(c.APIToken) < 32 {
+			return nil, fmt.Errorf("JOURNARR_API_TOKEN must be >= 32 chars")
 		}
 		c.PublicURL = strings.TrimRight(c.PublicURL, "/")
 		c.OIDCIssuerURL = strings.TrimRight(c.OIDCIssuerURL, "/")
