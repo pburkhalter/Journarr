@@ -95,8 +95,8 @@ func (a *Alerter) Observe(ctx context.Context, service, status, detail string) {
 		a.state = map[string]*svcState{}
 	}
 	st := a.state[service]
-	switch {
-	case status == "up":
+	switch status {
+	case "up":
 		if st != nil && st.alerted != "" {
 			title = service + " recovered"
 			msg = fmt.Sprintf("%s is up again after %s.", service, now.Sub(st.since).Round(time.Minute))
