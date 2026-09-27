@@ -105,3 +105,29 @@ func TestArrarrDownloads_Empty(t *testing.T) {
 }
 
 func c(srv *httptest.Server) *Arrarr { return NewArrarr(srv.URL, "k", 5*time.Second) }
+
+// arrarr answered /status.json while its TorBox poller had been dead for 6
+// days (Sep 2026); the tile stayed green because only reachability counted.
+func TestArrarrHealthFlagsStalledPoller(t *testing.T) {
+	var poller string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status.json" {
+			_, _ = w.Write([]byte(`{"version":"3.1.14","states":{}` + poller + `}`))
+			return
+		}
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	c := NewArrarr(srv.URL, "k", 5*time.Second)
+	for _, tc := range []struct{ poller, want string }{
+		{`,"poller":{"seconds_since_ok":20}`, "up"},
+		{`,"poller":{}`, "degraded"},
+		{`,"poller":{"seconds_since_ok":3600,"last_error":"mylist: timeout"}`, "down"},
+		{``, "up"}, // older arrarr without the field
+	} {
+		poller = tc.poller
+		if got := c.CheckHealth(context.Background()).Status; got != tc.want {
+			t.Errorf("poller %s: status %s, want %s", tc.poller, got, tc.want)
+		}
+	}
+}

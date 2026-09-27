@@ -22,8 +22,15 @@ type Config struct {
 	// disables webhook ingestion entirely (pollers still reconcile).
 	WebhookToken string `env:"JOURNARR_WEBHOOK_TOKEN"`
 
-	HealthInterval  time.Duration `env:"HEALTH_POLL_INTERVAL" envDefault:"45s"`
-	UpstreamTimeout time.Duration `env:"UPSTREAM_TIMEOUT" envDefault:"10s"`
+	HealthInterval time.Duration `env:"HEALTH_POLL_INTERVAL" envDefault:"45s"`
+	// Alerts: with both Pushover values set, a service that stays down for
+	// ALERT_DOWN_AFTER (or degraded for ALERT_DEGRADED_AFTER) is reported once,
+	// and again when it recovers.
+	PushoverToken      string        `env:"PUSHOVER_TOKEN"`
+	PushoverUser       string        `env:"PUSHOVER_USER"`
+	AlertDownAfter     time.Duration `env:"ALERT_DOWN_AFTER" envDefault:"10m"`
+	AlertDegradedAfter time.Duration `env:"ALERT_DEGRADED_AFTER" envDefault:"2h"`
+	UpstreamTimeout    time.Duration `env:"UPSTREAM_TIMEOUT" envDefault:"10s"`
 
 	SeerrPollInterval    time.Duration `env:"SEERR_POLL_INTERVAL" envDefault:"5m"`
 	HistoryPollInterval  time.Duration `env:"ARR_HISTORY_POLL_INTERVAL" envDefault:"2m"`

@@ -62,8 +62,12 @@
 		if (live.instances.length > 0) {
 			return live.instances
 				.filter((i) => !i.parent_id)
-				.map((i) => ({ health: live.services[i.id], label: i.label }))
-				.filter((x): x is { health: (typeof live.services)[string]; label: string } => !!x.health);
+				.map((i) => ({
+					health: live.services[i.id],
+					label: i.label,
+					children: live.instances.filter((c) => c.parent_id === i.id).map((c) => live.services[c.id]).filter((h) => !!h)
+				}))
+				.filter((x): x is { health: (typeof live.services)[string]; label: string; children: (typeof live.services)[string][] } => !!x.health);
 		}
 		return Object.values(live.services)
 			.sort((a, b) => {
@@ -71,7 +75,7 @@
 				const ib = fallbackOrder.indexOf(b.service);
 				return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
 			})
-			.map((health) => ({ health, label: undefined as string | undefined }));
+			.map((health) => ({ health, label: undefined as string | undefined, children: [] as (typeof live.services)[string][] }));
 	});
 </script>
 
@@ -109,6 +113,7 @@
 			<ServiceCard
 				service={x.health}
 				label={x.label}
+				children={x.children}
 				streams={x.health.service === 'jellyfin' ? streams : undefined}
 			/>
 		{/each}

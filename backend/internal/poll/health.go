@@ -25,6 +25,8 @@ type HealthPoller struct {
 	Interval time.Duration
 	Checks   []Check
 	Publish  func(event string, data any)
+	// Alert, when set, sees every result (it decides whether to page).
+	Alert func(ctx context.Context, service, status, detail string)
 }
 
 func (p *HealthPoller) Run(ctx context.Context) {
@@ -72,6 +74,9 @@ func (p *HealthPoller) pass(ctx context.Context) {
 			}
 			if p.Publish != nil {
 				p.Publish("service.health", h)
+			}
+			if p.Alert != nil {
+				p.Alert(ctx, c.Service, res.Status, detail)
 			}
 		}(c)
 	}

@@ -87,6 +87,22 @@ Register the client in your IdP with callback URL
 `$JOURNARR_PUBLIC_URL/auth/callback`. `/healthz` and (later) `/webhook/*`
 stay token-guarded outside the SSO gate.
 
+## Alerts
+
+With Pushover credentials set, Journarr reports a service that stays **down**
+for `ALERT_DOWN_AFTER` (default 10m) or **degraded** for
+`ALERT_DEGRADED_AFTER` (default 2h) — one message per incident, one more if it
+gets worse, one when it recovers. Pushover rather than WhatsApp on purpose:
+the alert has to arrive when notifyarr or WAHA is what broke.
+
+```
+PUSHOVER_TOKEN=…   # application token
+PUSHOVER_USER=…    # user or group key
+```
+
+arrarr counts as down when its TorBox poller has not completed a pass for
+15 minutes, even though it still answers.
+
 ## Develop
 
 ```

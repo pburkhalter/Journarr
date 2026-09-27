@@ -5,7 +5,13 @@
 	import { cn, relativeTime, titleCase } from '$lib/utils';
 
 	// `streams` = live Jellyfin now-playing (passed in for the Jellyfin tile only).
-	let { service, label, streams }: { service: ServiceHealth; label?: string; streams?: JellySession[] } =
+	// `children` = health of instances folded into this tile (waha → notifyarr).
+	let {
+		service,
+		label,
+		streams,
+		children = []
+	}: { service: ServiceHealth; label?: string; streams?: JellySession[]; children?: ServiceHealth[] } =
 		$props();
 
 	function fmtDur(sec: number): string {
@@ -20,8 +26,14 @@
 	const version = $derived(service.version ? service.version.replace(/^v/i, '') : '');
 
 	const detail = $derived(parseDetail(service));
-	// WAHA status folded into the notifyarr tile (no standalone WAHA tile).
-	const waha = $derived((detail['waha'] as string | undefined) ?? null);
+	// WAHA status folded into the notifyarr tile (no standalone WAHA tile),
+	// from Journarr's own WAHA check.
+	const waha = $derived.by(() => {
+		const w = children.find((c) => c.service === 'waha');
+		if (!w) return (detail['waha'] as string | undefined) ?? null;
+		const sessions = parseDetail(w)['sessions'] as { status: string }[] | undefined;
+		return sessions?.[0]?.status ?? w.status;
+	});
 	const headroom = $derived((detail['torbox_create'] as TorboxCreate | undefined) ?? null);
 	const jobStates = $derived((detail['states'] as Record<string, number> | undefined) ?? null);
 	const sessions = $derived(

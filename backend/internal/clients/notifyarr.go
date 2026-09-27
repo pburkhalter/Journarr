@@ -115,21 +115,9 @@ func (c *Notifyarr) CheckHealth(ctx context.Context) HealthResult {
 	if err != nil {
 		return down(lat, err)
 	}
-	status := "up"
-	if !body.OK || body.IssueCount > 0 {
-		status = "degraded"
-	}
-	detail := map[string]any{
-		"stuck_jobs": body.Metrics.StuckJobs,
-	}
-	// WAHA is folded into the notifyarr tile (no standalone WAHA tile): surface
-	// notifyarr's own view of the WhatsApp session here.
-	if body.Metrics.Waha != "" {
-		detail["waha"] = body.Metrics.Waha
-	}
-	if len(body.Issues) > 0 {
-		detail["issues"] = body.Issues
-	}
-	// SceneNZB grab-quota moved to the Prowlarr tile (Prowlarr is the source).
-	return HealthResult{Status: status, Latency: lat, Version: body.Version, Detail: detail}
+	// Only notifyarr's own reachability. The file behind this endpoint is
+	// written by the NAS watchdog script (healthchecks.sh): its issue list and
+	// WAHA state used to colour this tile, so one broken cron job could turn
+	// it green or red. WhatsApp has its own check (the waha instance).
+	return HealthResult{Status: "up", Latency: lat, Version: body.Version}
 }

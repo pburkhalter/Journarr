@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pburkhalter/journarr/internal/actions"
+	"github.com/pburkhalter/journarr/internal/alert"
 	"github.com/pburkhalter/journarr/internal/api"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/config"
@@ -107,6 +108,18 @@ func run() error {
 			Interval: cfg.HealthInterval,
 			Checks:   checks,
 			Publish:  broker.Publish,
+		}
+		if cfg.PushoverToken != "" && cfg.PushoverUser != "" {
+			al := &alert.Alerter{
+				Sender:        &alert.Pushover{Token: cfg.PushoverToken, User: cfg.PushoverUser},
+				Log:           log,
+				DownAfter:     cfg.AlertDownAfter,
+				DegradedAfter: cfg.AlertDegradedAfter,
+				Skip:          map[string]bool{"journarr": true},
+			}
+			hp.Alert = al.Observe
+			log.Info("health alerts enabled", "down_after", cfg.AlertDownAfter.String(),
+				"degraded_after", cfg.AlertDegradedAfter.String())
 		}
 		go hp.Run(ctx)
 		log.Info("health poller started", "services", len(checks), "interval", cfg.HealthInterval.String())

@@ -19,6 +19,8 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       SESSION_SECRET: ${SESSION_SECRET} # >= 16 chars, e.g. `openssl rand -hex 32`
+      # PUSHOVER_TOKEN: ${PUSHOVER_TOKEN}    # optional: alert when a service stays down
+      # PUSHOVER_USER: ${PUSHOVER_USER}
       # JOURNARR_API_TOKEN: ${JOURNARR_API_TOKEN} # optional: Bearer token for scripts, >= 32 chars
       # OIDC_ALLOWED_GROUPS: journarr-users   # optional, comma-separated
       # OIDC_SCOPES: openid,profile,email     # if your IdP rejects the groups scope

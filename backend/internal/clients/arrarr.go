@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -30,7 +31,18 @@ type ArrarrStatus struct {
 		Available int `json:"available"`
 		Capacity  int `json:"capacity"`
 	} `json:"torbox_create,omitempty"`
+	// Poller is arrarr's TorBox poll loop (>= 3.1.5). Every job transition
+	// sits behind it; empty until the first successful pass.
+	Poller *struct {
+		SecondsSinceOK *int64 `json:"seconds_since_ok"`
+		LastError      string `json:"last_error"`
+	} `json:"poller,omitempty"`
 }
+
+// pollerStallAfter marks arrarr down when its TorBox poller has not completed
+// a pass for this long: the process answers, but no job moves. In Sep 2026 a
+// stalled poller froze the pipeline for 6 days behind an all-green tile.
+const pollerStallAfter = 15 * time.Minute
 
 // authHeaders carries the SAB api key; arrarr ≥ 3.1.11 gates /status.json
 // behind it (the page lists job paths and error texts).
@@ -137,5 +149,18 @@ func (c *Arrarr) CheckHealth(ctx context.Context) HealthResult {
 		detail["downloads"] = items
 		detail["download_count"] = total
 	}
-	return HealthResult{Status: "up", Latency: lat, Version: body.Version, Detail: detail}
+	status := "up"
+	if p := body.Poller; p != nil {
+		switch {
+		case p.SecondsSinceOK == nil:
+			// no pass yet — normal for ~30s after a restart
+			status = "degraded"
+			detail["poller"] = "no successful TorBox poll since start " + p.LastError
+		case time.Duration(*p.SecondsSinceOK)*time.Second > pollerStallAfter:
+			status = "down"
+			detail["poller"] = fmt.Sprintf("TorBox poller stalled for %s %s",
+				(time.Duration(*p.SecondsSinceOK) * time.Second).String(), p.LastError)
+		}
+	}
+	return HealthResult{Status: status, Latency: lat, Version: body.Version, Detail: detail}
 }
