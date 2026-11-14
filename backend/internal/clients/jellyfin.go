@@ -143,10 +143,15 @@ type APIError struct {
 
 func (e *APIError) Error() string { return "jellyfin status " + itoa(e.Status) }
 
+// headers authenticates with the Authorization header in Jellyfin's
+// MediaBrowser scheme, the form its API documents. Jellyfin 12 turns legacy
+// authorization off by default and then answers 401 to the X-Emby-Token
+// header and the api_key query parameter. API keys are hex strings, so the
+// quoted value needs no escaping.
 func (c *Jellyfin) headers() map[string]string {
 	h := map[string]string{}
 	if c.APIKey != "" {
-		h["X-Emby-Token"] = c.APIKey
+		h["Authorization"] = `MediaBrowser Token="` + c.APIKey + `"`
 	}
 	return h
 }
