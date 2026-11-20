@@ -34,6 +34,10 @@ updates:
       # peer range stops at 6. Lift once svelte-check supports it.
       - dependency-name: typescript
         versions: [">=7"]
+      # @types/node follows the Node version the frontend is built with
+      # (node:24-alpine, CI node-version 24); raise it together with those.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
