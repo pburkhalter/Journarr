@@ -67,7 +67,11 @@ type Alerter struct {
 	DegradedAfter time.Duration
 	// Skip lists services never alerted on (Journarr's own tile).
 	Skip map[string]bool
-	Now  func() time.Time
+	// SkipDegraded lists services whose "degraded" state is left to another
+	// notifier; they are still alerted when down. Degraded counts as up for
+	// them, so the down timer starts only when the service really goes down.
+	SkipDegraded map[string]bool
+	Now          func() time.Time
 
 	mu    sync.Mutex
 	state map[string]*svcState
@@ -84,6 +88,9 @@ var severity = map[string]int{"up": 0, "degraded": 1, "down": 2}
 func (a *Alerter) Observe(ctx context.Context, service, status, detail string) {
 	if a == nil || a.Sender == nil || a.Skip[service] {
 		return
+	}
+	if status == "degraded" && a.SkipDegraded[service] {
+		status = "up"
 	}
 	now := time.Now()
 	if a.Now != nil {

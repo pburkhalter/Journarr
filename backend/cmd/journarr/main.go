@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -89,6 +90,12 @@ func run() error {
 		p.QuotaIndexer = cfg.ProwlarrQuotaIndexer
 		p.QuotaDailyCap = cfg.ProwlarrDailyCap
 	}
+	// With Prowlarr in the stack, an indexer failure is reported once, by it.
+	if reg.Prowlarr() != nil {
+		for _, a := range reg.MediaArrs() {
+			a.IndexerChecksAdvisory = true
+		}
+	}
 	sonarr, radarr, seerr, jelly := reg.Sonarr(), reg.Radarr(), reg.Seerr(), reg.Jellyfin()
 
 	// Health checks derive from every instance that declares CapHealth and
@@ -116,10 +123,17 @@ func run() error {
 				DownAfter:     cfg.AlertDownAfter,
 				DegradedAfter: cfg.AlertDegradedAfter,
 				Skip:          map[string]bool{"journarr": true},
+				SkipDegraded:  map[string]bool{},
+			}
+			for _, s := range cfg.AlertSkipDegraded {
+				if s = strings.TrimSpace(s); s != "" {
+					al.SkipDegraded[s] = true
+				}
 			}
 			hp.Alert = al.Observe
 			log.Info("health alerts enabled", "down_after", cfg.AlertDownAfter.String(),
-				"degraded_after", cfg.AlertDegradedAfter.String())
+				"degraded_after", cfg.AlertDegradedAfter.String(),
+				"skip_degraded", strings.Join(cfg.AlertSkipDegraded, ","))
 		}
 		go hp.Run(ctx)
 		log.Info("health poller started", "services", len(checks), "interval", cfg.HealthInterval.String())

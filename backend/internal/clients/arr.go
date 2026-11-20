@@ -21,6 +21,12 @@ type Arr struct {
 	// surfaces today's grabs vs the daily cap on the tile. Empty = disabled.
 	QuotaIndexer  string
 	QuotaDailyCap int
+
+	// IndexerChecksAdvisory: Sonarr/Radarr get their indexers from Prowlarr,
+	// which reports the same indexer failure itself. Their Indexer* health
+	// checks then stay on the tile but do not turn it degraded, so one
+	// indexer outage is one alert (Prowlarr's) instead of three.
+	IndexerChecksAdvisory bool
 }
 
 func NewArr(name, baseURL, apiBase, apiKey string, timeout time.Duration) *Arr {
@@ -61,6 +67,7 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 		return res
 	}
 	warnings := []string{}
+	problems := 0
 	for _, e := range entries {
 		// "New update is available" is informational, not a health problem —
 		// the update checker surfaces updates as a separate badge, so don't
@@ -69,17 +76,19 @@ func (c *Arr) CheckHealth(ctx context.Context) HealthResult {
 			strings.Contains(strings.ToLower(e.Message), "update is available") {
 			continue
 		}
-		if e.Type == "warning" || e.Type == "error" {
-			warnings = append(warnings, e.Message)
-			if e.Type == "error" {
-				res.Status = "degraded"
-			}
+		if e.Type != "warning" && e.Type != "error" {
+			continue
 		}
+		warnings = append(warnings, e.Message)
+		if c.IndexerChecksAdvisory && strings.HasPrefix(e.Source, "Indexer") {
+			continue
+		}
+		problems++
+	}
+	if problems > 0 {
+		res.Status = "degraded"
 	}
 	if len(warnings) > 0 {
-		if res.Status == "up" {
-			res.Status = "degraded"
-		}
 		res.Detail["health_warnings"] = len(warnings)
 		if len(warnings) > 3 {
 			warnings = warnings[:3]
