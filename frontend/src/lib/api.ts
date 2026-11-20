@@ -14,15 +14,57 @@ import type {
 	Stats
 } from './types';
 
-async function get<T>(path: string): Promise<T> {
-	const res = await fetch(path, { headers: { Accept: 'application/json' } });
-	if (res.status === 401) {
-		// Session expired mid-use — bounce through the SSO login flow.
-		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
-		throw new Error('unauthenticated');
+/** An HTTP error from the Journarr API; `status` is the response code. */
+export class ApiError extends Error {
+	constructor(
+		readonly path: string,
+		readonly status: number
+	) {
+		super(`${path}: ${status}`);
+		this.name = 'ApiError';
 	}
-	if (!res.ok) throw new Error(`${path}: ${res.status}`);
+}
+
+/** True for a 404 from the API (e.g. a request that no longer exists). */
+export function isNotFound(e: unknown): boolean {
+	return e instanceof ApiError && e.status === 404;
+}
+
+/**
+ * Sends the browser through the SSO login and back to where it was,
+ * query string included. Called on any 401 (session expired mid-use).
+ */
+export function toLogin(): never {
+	const rd = window.location.pathname + window.location.search;
+	window.location.href = '/auth/login?rd=' + encodeURIComponent(rd);
+	throw new Error('unauthenticated');
+}
+
+/**
+ * fetch with the app-wide rules: a 401 goes to the login, and every write
+ * carries a JSON body with its Content-Type (the backend refuses
+ * state-changing calls without it, as CSRF protection).
+ */
+async function request(path: string, method = 'GET', body?: unknown): Promise<Response> {
+	const init: RequestInit = { method, headers: { Accept: 'application/json' } };
+	if (method !== 'GET') {
+		init.headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+		init.body = JSON.stringify(body ?? {});
+	}
+	const res = await fetch(path, init);
+	if (res.status === 401) toLogin();
+	return res;
+}
+
+async function get<T>(path: string): Promise<T> {
+	const res = await request(path);
+	if (!res.ok) throw new ApiError(path, res.status);
 	return (await res.json()) as T;
+}
+
+async function post(path: string, body?: unknown): Promise<void> {
+	const res = await request(path, 'POST', body);
+	if (!res.ok) throw new ApiError(path, res.status);
 }
 
 export async function getMe(): Promise<Me> {
@@ -73,19 +115,6 @@ export async function getMediaEvents(id: number): Promise<RawEvent[]> {
 	return body.events ?? [];
 }
 
-async function post(path: string, body?: unknown): Promise<void> {
-	const res = await fetch(path, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: body ? JSON.stringify(body) : undefined
-	});
-	if (res.status === 401) {
-		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
-		throw new Error('unauthenticated');
-	}
-	if (!res.ok) throw new Error(`${path}: ${res.status}`);
-}
-
 export const retryItem = (mediaItemID: number) => post('/api/actions/retry', { media_item_id: mediaItemID });
 export const cancelRequest = (requestID: number) => post('/api/actions/cancel', { request_id: requestID });
 export const jellyfinScan = () => post('/api/actions/jellyfin-scan');
@@ -94,23 +123,33 @@ export async function getRemovalPlan(requestID: number): Promise<RemovalPlan> {
 	return get<RemovalPlan>(`/api/requests/${requestID}/removal`);
 }
 
-// removeTitle deletes the request's series/movie everywhere. A 409 means
-// someone is watching it; `force` overrides that.
-export async function removeTitle(
-	requestID: number,
-	force = false
-): Promise<{ ok: boolean; watching: boolean; error?: string; steps: RemovalStep[] }> {
-	const res = await fetch('/api/actions/remove', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ request_id: requestID, force })
+/** Why a removal answered 409: someone started watching, or the plan changed. */
+export type RemovalConflict = 'watching' | 'plan_changed';
+
+export interface RemovalResult {
+	ok: boolean;
+	conflict?: RemovalConflict;
+	error?: string;
+	steps: RemovalStep[];
+}
+
+// removeTitle deletes the request's series/movie everywhere. `planHash` comes
+// from the preview the user confirmed; the server answers 409 when the plan
+// changed since (code plan_changed) or someone is watching (code watching,
+// `force` overrides that one).
+export async function removeTitle(requestID: number, force = false, planHash?: string): Promise<RemovalResult> {
+	const res = await request('/api/actions/remove', 'POST', {
+		request_id: requestID,
+		force,
+		...(planHash ? { plan_hash: planHash } : {})
 	});
-	if (res.status === 401) {
-		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
-		throw new Error('unauthenticated');
+	const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; steps?: RemovalStep[] };
+	let conflict: RemovalConflict | undefined;
+	if (res.status === 409) {
+		// Older backends send no code; their only 409 was "someone is watching".
+		conflict = body.code === 'plan_changed' ? 'plan_changed' : 'watching';
 	}
-	const body = (await res.json().catch(() => ({}))) as { error?: string; steps?: RemovalStep[] };
-	return { ok: res.ok, watching: res.status === 409, error: body.error, steps: body.steps ?? [] };
+	return { ok: res.ok, conflict, error: body.error, steps: body.steps ?? [] };
 }
 
 export async function getActions(scope = 'global', targetId?: number): Promise<Action[]> {
@@ -129,16 +168,8 @@ export async function getFlowSettings(): Promise<Record<string, string>> {
 }
 
 export async function putFlowSettings(settings: Record<string, string>): Promise<Record<string, string>> {
-	const res = await fetch('/api/flow', {
-		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ settings })
-	});
-	if (res.status === 401) {
-		window.location.href = '/auth/login?rd=' + encodeURIComponent(window.location.pathname);
-		throw new Error('unauthenticated');
-	}
-	if (!res.ok) throw new Error(`/api/flow: ${res.status}`);
+	const res = await request('/api/flow', 'PUT', { settings });
+	if (!res.ok) throw new ApiError('/api/flow', res.status);
 	const body = (await res.json()) as { settings?: Record<string, string> };
 	return body.settings ?? {};
 }

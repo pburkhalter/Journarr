@@ -1,18 +1,19 @@
 <script lang="ts">
-	import { STAGES, stageIndex } from '$lib/types';
+	import { live } from '$lib/live.svelte';
 	import { cn } from '$lib/utils';
 
 	let { stage, error = false }: { stage: string; error?: boolean } = $props();
 
-	const label = $derived(STAGES.find((s) => s.key === stage)?.label ?? stage);
-	const idx = $derived(stageIndex(stage));
+	const label = $derived(live.stageLabel(stage));
+	const idx = $derived(live.stageIndex(stage));
+	const grabbedIdx = $derived(live.stageIndex('grabbed'));
 
 	const color = $derived(
 		error
 			? 'bg-destructive/15 text-destructive'
 			: stage === 'available' || stage === 'notified'
 				? 'bg-success/15 text-success'
-				: idx >= 2
+				: grabbedIdx >= 0 && idx >= grabbedIdx
 					? 'bg-info/15 text-info'
 					: 'bg-muted text-muted-foreground'
 	);

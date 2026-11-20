@@ -1,10 +1,17 @@
 <script lang="ts">
 	import { getDiskSpace, getSessions, jellyfinScan } from '$lib/api';
+	import { clock } from '$lib/clock.svelte';
 	import DiskSpaceCard from '$lib/components/DiskSpaceCard.svelte';
 	import ServiceCard from '$lib/components/ServiceCard.svelte';
-	import { confirm } from '$lib/confirm.svelte';
 	import { live } from '$lib/live.svelte';
-	import type { DiskMount, JellySession } from '$lib/types';
+	import { confirmJellyfinScan } from '$lib/prompts';
+	import type { DiskMount, JellySession, ServiceHealth } from '$lib/types';
+	import { cn } from '$lib/utils';
+
+	// The backend checks every service each 45 s (HEALTH_POLL_INTERVAL). A
+	// reading older than two passes means the checks or the live stream
+	// stopped, so the tile is dimmed instead of looking current.
+	const STALE_AFTER_MS = 90_000;
 
 	// Live Jellyfin now-playing, folded into the Jellyfin tile (no separate card).
 	let streams = $state<JellySession[]>([]);
@@ -38,45 +45,56 @@
 	});
 
 	let scanning = $state(false);
-	let scanMsg = $state('');
+	let scanMsg = $state<{ text: string; error: boolean } | null>(null);
+	let scanMsgTimer: ReturnType<typeof setTimeout>;
 	async function doScan() {
-		if (!(await confirm.ask({ title: 'Trigger Jellyfin scan', message: 'Start a full library refresh in Jellyfin?', confirmLabel: 'Scan' }))) return;
+		if (!(await confirmJellyfinScan())) return;
 		scanning = true;
-		scanMsg = '';
+		scanMsg = null;
 		try {
 			await jellyfinScan();
-			scanMsg = 'scan triggered';
+			scanMsg = { text: 'Scan started', error: false };
 		} catch {
-			scanMsg = 'failed';
+			scanMsg = { text: 'Scan failed', error: true };
 		} finally {
 			scanning = false;
+			clearTimeout(scanMsgTimer);
+			scanMsgTimer = setTimeout(() => (scanMsg = null), 5000);
 		}
 	}
 
+	type Tile = { health: ServiceHealth; kind?: string; label?: string; children: ServiceHealth[] };
+
 	// Tiles derive from the registry (order, label, folding). Instances with a
 	// parent_id (e.g. waha → notifyarr) are folded and not shown standalone.
-	// Falls back to the historical hardcoded order if /api/instances is absent.
-	const fallbackOrder = ['seerr', 'sonarr', 'radarr', 'prowlarr', 'arrarr', 'jellyfin', 'waha', 'notifyarr'];
-
-	const sorted = $derived.by(() => {
+	// Without /api/instances (older backend) every health row is a tile,
+	// sorted by name.
+	const tiles = $derived.by((): Tile[] => {
 		if (live.instances.length > 0) {
-			return live.instances
-				.filter((i) => !i.parent_id)
-				.map((i) => ({
-					health: live.services[i.id],
-					label: i.label,
-					children: live.instances.filter((c) => c.parent_id === i.id).map((c) => live.services[c.id]).filter((h) => !!h)
-				}))
-				.filter((x): x is { health: (typeof live.services)[string]; label: string; children: (typeof live.services)[string][] } => !!x.health);
+			const out: Tile[] = [];
+			for (const i of live.instances) {
+				if (i.parent_id) continue;
+				const health = live.services[i.id];
+				if (!health) continue;
+				const children = live.instances
+					.filter((c) => c.parent_id === i.id)
+					.map((c) => live.services[c.id])
+					.filter((h): h is ServiceHealth => !!h);
+				out.push({ health, kind: i.kind, label: i.label, children });
+			}
+			return out;
 		}
 		return Object.values(live.services)
-			.sort((a, b) => {
-				const ia = fallbackOrder.indexOf(a.service);
-				const ib = fallbackOrder.indexOf(b.service);
-				return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-			})
-			.map((health) => ({ health, label: undefined as string | undefined, children: [] as (typeof live.services)[string][] }));
+			.sort((a, b) => a.service.localeCompare(b.service))
+			.map((health) => ({ health, children: [] }));
 	});
+
+	function isStale(h: ServiceHealth): boolean {
+		if (!live.connected) return true;
+		const at = new Date(h.checked_at).getTime();
+		return Number.isFinite(at) && clock.now - at > STALE_AFTER_MS;
+	}
+	const anyStale = $derived(tiles.some((t) => isStale(t.health)));
 </script>
 
 <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -85,22 +103,45 @@
 		<p class="text-sm text-muted-foreground">Live health of every tool in the pipeline.</p>
 	</div>
 	<div class="flex items-center gap-2">
-		{#if scanMsg}<span class="text-[11px] text-muted-foreground">{scanMsg}</span>{/if}
+		{#if scanMsg}
+			<span role="status" class={cn('text-xs', scanMsg.error ? 'text-destructive' : 'text-muted-foreground')}>
+				{scanMsg.text}
+			</span>
+		{/if}
 		<button
 			onclick={doScan}
 			disabled={scanning}
-			class="shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+			class="tap shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
 		>
 			{scanning ? 'Scanning…' : 'Jellyfin scan'}
 		</button>
 	</div>
 </div>
 
-<div class="mb-4 max-w-xl">
-	<DiskSpaceCard {mounts} />
-</div>
+{#if live.servicesLoaded && (!live.connected || anyStale)}
+	<div role="status" class="mb-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+		{#if !live.connected}
+			Live updates are disconnected — showing the last known state. Reconnecting…
+		{:else}
+			Some checks are older than {STALE_AFTER_MS / 1000} s; their tiles are dimmed.
+		{/if}
+	</div>
+{/if}
 
-{#if sorted.length === 0}
+{#if !live.servicesLoaded}
+	{#if live.servicesError}
+		<div class="max-w-xl rounded-lg border border-dashed border-destructive/40 py-16 text-center">
+			<div class="text-sm font-medium">Journarr's backend is not answering</div>
+			<p class="mt-1 text-xs text-muted-foreground">Retrying in the background.</p>
+		</div>
+	{:else}
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true" aria-label="Loading services">
+			{#each [0, 1, 2] as i (i)}
+				<div class="h-28 animate-pulse rounded-lg border border-border bg-card"></div>
+			{/each}
+		</div>
+	{/if}
+{:else if tiles.length === 0}
 	<div class="max-w-xl rounded-lg border border-dashed border-border py-16 text-center">
 		<div class="text-sm font-medium">No services configured</div>
 		<p class="mt-1 text-xs text-muted-foreground">
@@ -109,12 +150,15 @@
 	</div>
 {:else}
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-		{#each sorted as x (x.health.service)}
+		<DiskSpaceCard {mounts} />
+		{#each tiles as t (t.health.service)}
 			<ServiceCard
-				service={x.health}
-				label={x.label}
-				children={x.children}
-				streams={x.health.service === 'jellyfin' ? streams : undefined}
+				service={t.health}
+				kind={t.kind}
+				label={t.label}
+				children={t.children}
+				stale={isStale(t.health)}
+				streams={t.health.service === 'jellyfin' ? streams : undefined}
 			/>
 		{/each}
 	</div>

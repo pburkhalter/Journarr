@@ -17,6 +17,42 @@ export interface TorboxCreate {
 	capacity: number;
 }
 
+/**
+ * Per-service extras in ServiceHealth.detail, as the backend health checks
+ * write them (backend/internal/clients/*.go, CheckHealth). Every field is
+ * optional: each service kind fills only its own.
+ */
+export interface ServiceDetail {
+	/** any kind: the check failed (clients.down) */
+	error?: string;
+	/** sonarr/radarr/prowlarr: /system/status answered, /health did not */
+	health_error?: string;
+	/** sonarr/radarr/prowlarr: health warnings and errors from the arr */
+	health_messages?: string[];
+	health_warnings?: number;
+	/** prowlarr: daily grab quota of the configured indexer */
+	grab_quota?: { indexer: string; used: number; cap: number; left: number };
+	/** arrarr: job counts per state */
+	states?: Record<string, number>;
+	/** arrarr: TorBox create headroom */
+	torbox_create?: TorboxCreate;
+	/** arrarr: downloads in flight (coarse state, no byte progress) */
+	downloads?: { title: string; state: string }[];
+	download_count?: number;
+	/** arrarr: why the TorBox poller counts as stalled */
+	poller?: string;
+	/** seerr: Seerr asks for a restart (settings changed) */
+	restart_required?: boolean;
+	/** jellyfin */
+	server_name?: string;
+	/** waha: WhatsApp sessions */
+	sessions?: { name: string; status: string }[];
+	/** tdarr */
+	nodes?: number;
+	gpu_workers?: number;
+	transcodes?: { file: string; percentage: number; fps: number; eta: string; type?: string }[];
+}
+
 /** Registry instance metadata (GET /api/instances) — drives tile order/label/fold. */
 export interface Instance {
 	id: string;
@@ -55,8 +91,9 @@ export interface Stats {
 }
 
 // Fallback stage list used only until GET /api/stages loads into live.stages
-// (the canonical source). 'transcode' is omitted here; the backend catalog
-// gates it behind a Tdarr instance.
+// (the canonical source; read it through live.stageList / live.stageIndex).
+// 'transcode' is omitted here; the backend catalog gates it behind a Tdarr
+// instance.
 export const STAGES = [
 	{ key: 'requested', label: 'Requested' },
 	{ key: 'approved', label: 'Approved' },
@@ -71,10 +108,6 @@ export const STAGES = [
 ] as const;
 
 export type StageKey = (typeof STAGES)[number]['key'];
-
-export function stageIndex(key: string): number {
-	return STAGES.findIndex((s) => s.key === key);
-}
 
 export interface DiskMount {
 	path: string;
@@ -203,6 +236,9 @@ export interface RemovalPlan {
 	recycle_days: number;
 	viewers: string[];
 	warnings: string[];
+	/** hash of what the plan deletes; sent back on remove so the server can
+	 * refuse when the plan changed in between (409, code plan_changed) */
+	plan_hash?: string;
 }
 
 export interface RemovalStep {
@@ -221,10 +257,11 @@ export interface Me {
 	};
 }
 
-export function parseDetail(h: ServiceHealth): Record<string, unknown> {
+export function parseDetail(h: ServiceHealth): ServiceDetail {
 	if (!h.detail) return {};
 	try {
-		return JSON.parse(h.detail) as Record<string, unknown>;
+		const v: unknown = JSON.parse(h.detail);
+		return v && typeof v === 'object' ? (v as ServiceDetail) : {};
 	} catch {
 		return {};
 	}

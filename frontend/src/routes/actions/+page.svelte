@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { executeAction, getActions, getFlowSettings, putFlowSettings } from '$lib/api';
 	import { confirm } from '$lib/confirm.svelte';
+	import { confirmJellyfinScan } from '$lib/prompts';
 	import type { Action } from '$lib/types';
 	import { cn } from '$lib/utils';
 
@@ -12,16 +13,19 @@
 	// Control-plane (Flow) settings.
 	let flow = $state<Record<string, string>>({});
 	let flowSaving = $state(false);
+	let flowError = $state('');
 	const flowOn = (k: string) => flow[k] === 'true' || flow[k] === '1' || flow[k] === 'on';
 	const retryMin = $derived(Math.round((Number(flow['auto_retry_stuck_after_secs']) || 0) / 60));
 
 	async function saveFlow(patch: Record<string, string>) {
 		flow = { ...flow, ...patch };
 		flowSaving = true;
+		flowError = '';
 		try {
 			flow = await putFlowSettings(patch);
 		} catch {
-			// reload authoritative state on failure
+			// say so, then reload the authoritative state
+			flowError = 'Could not save the change — the setting shows what is stored.';
 			try {
 				flow = await getFlowSettings();
 			} catch {
@@ -58,16 +62,21 @@
 		return {};
 	}
 
-	async function run(a: Action) {
-		if (
-			a.kind === 'search-missing' &&
-			!(await confirm.ask({
+	// Same question as anywhere else the same action is offered.
+	function confirmRun(a: Action): Promise<boolean> {
+		if (a.kind === 'search-missing') {
+			return confirm.ask({
 				title: a.label,
 				message: 'Trigger a search for all missing monitored items? This can start many downloads.',
 				confirmLabel: 'Search'
-			}))
-		)
-			return;
+			});
+		}
+		if (a.kind === 'library-scan') return confirmJellyfinScan();
+		return Promise.resolve(true);
+	}
+
+	async function run(a: Action) {
+		if (!(await confirmRun(a))) return;
 		busy[a.id] = true;
 		result[a.id] = '';
 		try {
@@ -114,7 +123,7 @@
 				onclick={() => run(a)}
 				disabled={busy[a.id]}
 				class={cn(
-					'shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50',
+					'tap shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50',
 					a.danger
 						? 'border-destructive/40 text-destructive hover:bg-destructive/10'
 						: 'border-border hover:bg-accent'
@@ -175,6 +184,9 @@
 			Interventions Journarr performs on its own. Off by default — the download pipeline runs
 			the same either way.
 		</p>
+		{#if flowError}
+			<p role="alert" class="mb-3 max-w-2xl rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{flowError}</p>
+		{/if}
 		<div class="space-y-3">
 			<label class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
 				<span class="min-w-0">
@@ -200,7 +212,8 @@
 						value={retryMin}
 						onchange={(e) =>
 							saveFlow({ auto_retry_stuck_after_secs: String(Math.max(0, Number(e.currentTarget.value) || 0) * 60) })}
-						class="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs tabular-nums"
+						aria-label="Minutes without progress before a retry"
+						class="h-10 w-20 rounded-md border border-border bg-background px-2 py-1 text-base tabular-nums sm:h-auto sm:w-16 sm:text-xs"
 					/>
 					<span class="text-[11px] text-muted-foreground">min</span>
 				</span>

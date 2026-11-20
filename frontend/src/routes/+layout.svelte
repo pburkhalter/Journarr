@@ -10,11 +10,22 @@
 
 	onMount(() => live.start());
 
-	const nav = [
-		{ href: '/', label: 'Flow' },
-		{ href: '/history', label: 'History' },
-		{ href: '/actions', label: 'Actions' },
-		{ href: '/services', label: 'Services' }
+	// History is the Flow page with the "Done" filter, so both entries point at
+	// "/" and the status parameter decides which one is highlighted.
+	const nav: { href: string; label: string; active: (u: URL) => boolean }[] = [
+		{
+			href: '/',
+			label: 'Flow',
+			active: (u) =>
+				(u.pathname === '/' && u.searchParams.get('status') !== 'done') || u.pathname.startsWith('/requests/')
+		},
+		{
+			href: '/?status=done',
+			label: 'History',
+			active: (u) => u.pathname === '/' && u.searchParams.get('status') === 'done'
+		},
+		{ href: '/actions', label: 'Actions', active: (u) => u.pathname === '/actions' },
+		{ href: '/services', label: 'Services', active: (u) => u.pathname === '/services' }
 	];
 </script>
 
@@ -36,18 +47,23 @@
 				</div>
 			</a>
 			<!-- mobile-only live indicator (desktop shows it in the footer) -->
-			<span
-				class={cn('size-2 shrink-0 rounded-full md:hidden', live.connected ? 'bg-success' : 'bg-destructive')}
-				title={live.connected ? 'live' : 'reconnecting…'}
-			></span>
+			<span class="flex items-center gap-1.5 text-[11px] text-muted-foreground md:hidden" role="status">
+				<span
+					class={cn('size-2 shrink-0 rounded-full', live.connected ? 'bg-success' : 'bg-destructive')}
+					aria-hidden="true"
+				></span>
+				{live.connected ? 'live' : 'offline'}
+			</span>
 		</div>
-		<nav class="flex gap-1 px-3 pb-2 md:flex-col md:py-2">
+		<nav class="flex gap-1 overflow-x-auto px-3 pb-2 md:flex-col md:py-2">
 			{#each nav as item (item.href)}
+				{@const active = item.active(page.url)}
 				<a
 					href={item.href}
+					aria-current={active ? 'page' : undefined}
 					class={cn(
-						'rounded-md px-3 py-2 text-sm transition-colors',
-						page.url.pathname === item.href
+						'tap flex items-center rounded-md px-3 py-2 text-sm transition-colors',
+						active
 							? 'bg-accent text-accent-foreground font-medium'
 							: 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
 					)}
@@ -78,9 +94,10 @@
 					</div>
 				</div>
 			{/if}
-			<div class="flex items-center gap-2 text-[11px] text-muted-foreground">
+			<div class="flex items-center gap-2 text-[11px] text-muted-foreground" role="status">
 				<span
 					class={cn('size-2 rounded-full', live.connected ? 'bg-success' : 'bg-destructive')}
+					aria-hidden="true"
 				></span>
 				{live.connected ? 'live' : 'reconnecting…'}
 			</div>

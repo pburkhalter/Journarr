@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { live } from '$lib/live.svelte';
-	import { STAGES, type Transition } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import type { Transition } from '$lib/types';
+	import { cn, formatTime } from '$lib/utils';
 
 	let {
 		transitions,
@@ -9,13 +9,10 @@
 		currentStage
 	}: { transitions: Transition[]; currentCycle: number; currentStage: string } = $props();
 
-	// Full active-stage skeleton, single-sourced from the backend (STAGES is the
-	// pre-load fallback). Includes transcode only when a Tdarr instance exists.
-	const stages = $derived(
-		live.stages.length
-			? live.stages.map((s) => ({ key: s.key, label: s.label }))
-			: STAGES.map((s) => ({ key: s.key, label: s.label }))
-	);
+	// Full active-stage skeleton, single-sourced from the backend (the STAGES
+	// const is the pre-load fallback). Includes transcode only when a Tdarr
+	// instance exists.
+	const stages = $derived(live.stageList);
 	const ordinalOf = (key: string) => stages.findIndex((s) => s.key === key);
 
 	const lastKey = $derived(stages.length ? stages[stages.length - 1].key : 'notified');
@@ -23,10 +20,6 @@
 		currentStage === lastKey || currentStage === 'available' || currentStage === 'notified'
 	);
 
-	function fmt(iso: string): string {
-		const d = new Date(iso);
-		return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-	}
 	function duration(prev: string, next: string): string {
 		const ms = new Date(next).getTime() - new Date(prev).getTime();
 		if (!Number.isFinite(ms) || ms < 0) return '';
@@ -109,7 +102,7 @@
 					{n.label}
 				</span>
 				{#if n.at}
-					<span class="text-[11px] tabular-nums text-muted-foreground">{fmt(n.at)}</span>
+					<span class="text-[11px] tabular-nums text-muted-foreground">{formatTime(n.at)}</span>
 					{#if n.delta}<span class="text-[11px] text-muted-foreground/60">{n.delta}</span>{/if}
 					{#if n.state === 'current' && !isComplete}
 						<span class="text-[11px] font-medium text-info">· in progress</span>
@@ -136,7 +129,7 @@
 					<span class="absolute -left-[21px] top-1 size-2.5 rounded-full border-2 border-card bg-info"></span>
 					<div class="flex items-baseline gap-2">
 						<span class="text-xs font-medium">{stages.find((s) => s.key === t.stage)?.label ?? t.stage}</span>
-						<span class="text-[11px] tabular-nums text-muted-foreground">{fmt(t.entered_at)}</span>
+						<span class="text-[11px] tabular-nums text-muted-foreground">{formatTime(t.entered_at)}</span>
 						{#if i > 0}<span class="text-[11px] text-muted-foreground/60">{duration(ts[i - 1].entered_at, t.entered_at)}</span>{/if}
 					</div>
 					{#if t.note}<div class="mt-0.5 break-all text-[11px] text-muted-foreground">{t.note}</div>{/if}

@@ -1,17 +1,32 @@
 <script lang="ts">
 	import StageStrip from '$lib/components/StageStrip.svelte';
-	import { stageIndex, type RequestRollup } from '$lib/types';
+	import { clock } from '$lib/clock.svelte';
+	import { live } from '$lib/live.svelte';
+	import type { RequestRollup } from '$lib/types';
 	import { cn, relativeTime } from '$lib/utils';
 
 	let { request }: { request: RequestRollup } = $props();
 
 	const doneCount = $derived.by(() => {
+		const available = live.stageIndex('available');
 		let n = 0;
 		for (const [stage, c] of Object.entries(request.stage_counts ?? {})) {
-			if (stageIndex(stage) >= stageIndex('available')) n += c;
+			if (available >= 0 && live.stageIndex(stage) >= available) n += c;
 		}
 		return n;
 	});
+
+	// One-word state of a movie. A canceled or failed request is not "in
+	// progress" any more, even though its single item never arrived.
+	const movieState = $derived(
+		doneCount >= 1
+			? 'available'
+			: request.status === 'canceled'
+				? 'canceled'
+				: request.status === 'failed'
+					? 'failed'
+					: 'in progress'
+	);
 
 	// Posters come from Seerr and are always TMDB-hosted; anything else in
 	// the DB (crafted release metadata) is not worth a browser request.
@@ -76,7 +91,7 @@
 				<div class="mt-0.5 text-[11px] text-muted-foreground">
 					{#if request.requested_by}{request.requested_by} · {/if}
 					{#if request.seerr_request_id == null}manual · {/if}
-					{relativeTime(request.updated_at)}
+					{relativeTime(request.updated_at, clock.now)}
 				</div>
 			</div>
 			<div class="flex shrink-0 items-center gap-1.5">
@@ -110,7 +125,7 @@
 				{:else if request.media_type === 'tv'}
 					{doneCount}/{request.item_count} episodes available
 				{:else}
-					{doneCount === 1 ? 'available' : 'in progress'}
+					{movieState}
 				{/if}
 			</span>
 			{#if request.last_error}

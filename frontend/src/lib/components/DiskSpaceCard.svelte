@@ -27,7 +27,8 @@
 		{#if others.length > 0 && libraries.length > 0}
 			<button
 				onclick={() => (showAll = !showAll)}
-				class="text-[11px] text-muted-foreground hover:text-foreground"
+				aria-expanded={showAll}
+				class="tap -my-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
 			>
 				{showAll ? 'Libraries only' : `All mounts (${mounts.length})`}
 			</button>
