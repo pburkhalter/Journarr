@@ -53,6 +53,15 @@ type Config struct {
 	EventsRetentionDays int           `env:"EVENTS_RETENTION_DAYS" envDefault:"90"`
 
 	// Services with an empty URL are simply not monitored/ingested.
+	// MCP server at /mcp. Tokens come from JOURNARR_MCP_TOKEN_<CLIENT>
+	// (scanned in Load, one per client); JOURNARR_MCP_WRITE names the clients
+	// that may change things; JOURNARR_MCP_REMOVE=approval adds removal
+	// requests the owner approves in the UI (needs SSO).
+	MCPTokens     map[string]string `env:"-"`
+	MCPWrite      []string          `env:"JOURNARR_MCP_WRITE" envSeparator:","`
+	MCPRemove     string            `env:"JOURNARR_MCP_REMOVE" envDefault:"off"`
+	MCPWriteLimit int               `env:"JOURNARR_MCP_WRITE_LIMIT" envDefault:"30"` // write calls per client per hour
+
 	SeerrURL    string `env:"SEERR_URL"`
 	SeerrAPIKey string `env:"SEERR_API_KEY"`
 
@@ -169,6 +178,9 @@ func Load() (*Config, error) {
 	} {
 		*u = strings.TrimRight(*u, "/")
 	}
+	if err := c.loadMCP(os.Environ()); err != nil {
+		return nil, err
+	}
 	if c.HealthInterval < 5*time.Second {
 		return nil, fmt.Errorf("HEALTH_POLL_INTERVAL must be >= 5s")
 	}
@@ -188,5 +200,53 @@ func Load() (*Config, error) {
 		c.PublicURL = strings.TrimRight(c.PublicURL, "/")
 		c.OIDCIssuerURL = strings.TrimRight(c.OIDCIssuerURL, "/")
 	}
+	if c.MCPRemove == "approval" && !c.SSOEnabled() {
+		return nil, fmt.Errorf("JOURNARR_MCP_REMOVE=approval needs SSO (OIDC_ISSUER_URL): only a logged-in owner may approve a removal")
+	}
 	return c, nil
+}
+
+// mcpTokenPrefix starts one env var per MCP client: JOURNARR_MCP_TOKEN_MAC.
+const mcpTokenPrefix = "JOURNARR_MCP_TOKEN_" //nolint:gosec // an env var name prefix, not a credential
+
+// loadMCP collects the per-client MCP tokens from environ and checks the
+// MCP settings against them.
+func (c *Config) loadMCP(environ []string) error {
+	c.MCPTokens = map[string]string{}
+	seen := map[string]string{}
+	for _, kv := range environ {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || !strings.HasPrefix(name, mcpTokenPrefix) || strings.TrimSpace(value) == "" {
+			continue
+		}
+		client := strings.ToLower(strings.TrimPrefix(name, mcpTokenPrefix))
+		value = strings.TrimSpace(value)
+		if client == "" {
+			return fmt.Errorf("%s needs a client name suffix, e.g. %sMAC", mcpTokenPrefix, mcpTokenPrefix)
+		}
+		if len(value) < 32 {
+			return fmt.Errorf("%s: token must be >= 32 chars", name)
+		}
+		if other, dup := seen[value]; dup {
+			return fmt.Errorf("%s and %s%s share a token; give every client its own", name, mcpTokenPrefix, strings.ToUpper(other))
+		}
+		seen[value] = client
+		c.MCPTokens[client] = value
+	}
+	for i, w := range c.MCPWrite {
+		w = strings.ToLower(strings.TrimSpace(w))
+		c.MCPWrite[i] = w
+		if _, ok := c.MCPTokens[w]; w != "" && !ok {
+			return fmt.Errorf("JOURNARR_MCP_WRITE names %q, but %s%s is not set", w, mcpTokenPrefix, strings.ToUpper(w))
+		}
+	}
+	switch c.MCPRemove {
+	case "off", "approval":
+	default:
+		return fmt.Errorf("JOURNARR_MCP_REMOVE must be off or approval, got %q", c.MCPRemove)
+	}
+	if c.MCPWriteLimit < 1 {
+		return fmt.Errorf("JOURNARR_MCP_WRITE_LIMIT must be >= 1")
+	}
+	return nil
 }

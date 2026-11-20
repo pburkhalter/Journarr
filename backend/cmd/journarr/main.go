@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,6 +23,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
 	"github.com/pburkhalter/journarr/internal/logger"
+	"github.com/pburkhalter/journarr/internal/mcpserver"
 	"github.com/pburkhalter/journarr/internal/pipeline"
 	"github.com/pburkhalter/journarr/internal/poll"
 	"github.com/pburkhalter/journarr/internal/registry"
@@ -353,6 +355,29 @@ func run() error {
 		}
 	})
 
+	storageSvc := &storage.Service{Reg: reg, Log: log}
+
+	// MCP server for LLM clients: one bearer token per client, read or
+	// read+write scope; removals only as requests the owner approves in the UI.
+	var mcpHandler http.Handler
+	if m := mcpserver.New(mcpserver.Config{
+		Tokens: cfg.MCPTokens, Writers: cfg.MCPWrite, Remove: cfg.MCPRemove,
+		WriteLimit: cfg.MCPWriteLimit, PublicURL: cfg.PublicURL, Version: versionStr,
+	}, mcpserver.Deps{
+		Store: st, Actions: acts, Registry: reg, Storage: storageSvc, Updates: updateChecker, Log: log,
+	}); m != nil {
+		mcpHandler = m
+		clientNames := make([]string, 0, len(cfg.MCPTokens))
+		for c := range cfg.MCPTokens {
+			clientNames = append(clientNames, c)
+		}
+		sort.Strings(clientNames)
+		log.Info("mcp enabled", "path", "/mcp", "clients", clientNames, "writers", cfg.MCPWrite,
+			"remove", cfg.MCPRemove, "read_tools", len(m.Tools(false)), "all_tools", len(m.Tools(true)))
+	} else {
+		log.Info("mcp disabled — set JOURNARR_MCP_TOKEN_<CLIENT> to enable")
+	}
+
 	router := api.NewRouter(api.Deps{
 		Store:    st,
 		Broker:   broker,
@@ -360,7 +385,7 @@ func run() error {
 		Ingest:   ing,
 		Actions:  acts,
 		Registry: reg,
-		Storage:  &storage.Service{Reg: reg, Log: log},
+		Storage:  storageSvc,
 		Flow:     flowCtrl,
 		Updates:  updateChecker,
 		Log:      log,
@@ -369,6 +394,7 @@ func run() error {
 
 		PublicURL: cfg.PublicURL,
 		Tasks:     &bg,
+		MCP:       mcpHandler,
 	})
 	srv := &http.Server{
 		Addr:              cfg.Listen,

@@ -101,6 +101,37 @@ deletes only if the plan is still the same, else it answers 409 with
 unless `force`). The hash covers what gets deleted (Sonarr/Radarr entry and
 folder, Journarr requests, Seerr entries), not file counts or downloads.
 
+## MCP server (LLM access)
+
+Journarr serves the [Model Context Protocol](https://modelcontextprotocol.io)
+at `/mcp` (Streamable HTTP, stateless). An LLM client sees the pipeline and
+the library and can change it — through the same audited actions the UI uses.
+
+```
+JOURNARR_MCP_TOKEN_MAC=$(openssl rand -hex 32)       # one token per client,
+JOURNARR_MCP_TOKEN_HA=$(openssl rand -hex 32)        # the suffix names it
+JOURNARR_MCP_WRITE=mac                               # clients that may change things
+JOURNARR_MCP_REMOVE=off                              # off | approval (see below)
+JOURNARR_MCP_WRITE_LIMIT=30                          # write calls per client per hour
+```
+
+Without any `JOURNARR_MCP_TOKEN_*` the endpoint does not exist. Tokens are
+separate from `JOURNARR_API_TOKEN` and only valid on `/mcp`. A client only
+sees the tools of its scope:
+
+| Scope | Tools |
+|---|---|
+| read | `get_overview` (health with reasons, counts, stuck, disks), `list_requests`, `get_request`, `search_titles` (TMDB via Seerr, with status), `get_title`, `list_library`, `get_queue`, `get_calendar`, `list_options` (quality profiles, root folders) |
+| write | `request_title` (through Seerr, so Journarr tracks it), `update_title` (monitored, quality profile, minimum availability, season monitoring), `search_title`, `retry_item`, `cancel_request`, `resend_notification`, `scan_jellyfin` |
+
+Every call is logged with client and tool; every write lands in the audit
+(`GET /api/actions/log`) with actor `mcp:<client>`.
+
+```
+claude mcp add --transport http journarr https://journarr.example.com/mcp \
+  --header "Authorization: Bearer $JOURNARR_MCP_TOKEN_MAC"
+```
+
 ## Alerts
 
 With Pushover credentials set, Journarr reports a service that stays **down**

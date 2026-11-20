@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -29,16 +30,16 @@ type ServiceView struct {
 
 // Services returns every service's health with its update status. Shared by
 // the API and the MCP server.
-func Services(d Deps, req *http.Request) ([]ServiceView, error) {
-	list, err := d.Store.ListServiceHealth(req.Context())
+func Services(ctx context.Context, st *store.Store, upd *updates.Checker) ([]ServiceView, error) {
+	list, err := st.ListServiceHealth(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ServiceView, 0, len(list))
 	for _, h := range list {
 		v := ServiceView{ServiceHealth: h}
-		if d.Updates != nil {
-			if info, ok := d.Updates.Get(h.Service); ok {
+		if upd != nil {
+			if info, ok := upd.Get(h.Service); ok {
 				v.Update = &info
 			}
 		}
@@ -48,7 +49,7 @@ func Services(d Deps, req *http.Request) ([]ServiceView, error) {
 }
 
 func (s *server) listServices(w http.ResponseWriter, req *http.Request) {
-	out, err := Services(s.Deps, req)
+	out, err := Services(req.Context(), s.Store, s.Updates)
 	if err != nil {
 		httpError(w, s.Log, "list services", err)
 		return

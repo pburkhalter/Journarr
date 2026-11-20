@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -45,8 +46,7 @@ type RequestDetail struct {
 
 // LoadRequestDetail assembles a request's rollup, items with transitions and
 // downloads; nil when the request does not exist. Shared with the MCP server.
-func LoadRequestDetail(st *store.Store, req *http.Request, id int64) (*RequestDetail, error) {
-	ctx := req.Context()
+func LoadRequestDetail(ctx context.Context, st *store.Store, id int64) (*RequestDetail, error) {
 	request, err := st.RollupForRequest(ctx, id)
 	if err != nil || request == nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (s *server) getRequest(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	d, err := LoadRequestDetail(s.Store, req, id)
+	d, err := LoadRequestDetail(req.Context(), s.Store, id)
 	if err != nil {
 		httpError(w, s.Log, "get request", err)
 		return

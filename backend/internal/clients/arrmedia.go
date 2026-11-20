@@ -169,6 +169,8 @@ type QueueRecord struct {
 	TrackedDownloadStatus string  `json:"trackedDownloadStatus"` // ok|warning|error
 	TrackedDownloadState  string  `json:"trackedDownloadState"`  // downloading|importPending|importBlocked|...
 	ErrorMessage          string  `json:"errorMessage"`
+	TimeLeft              string  `json:"timeleft"` // "hh:mm:ss"
+	Protocol              string  `json:"protocol"` // usenet|torrent
 	EpisodeID             int64   `json:"episodeId"`
 	SeriesID              int64   `json:"seriesId"`
 	MovieID               int64   `json:"movieId"`

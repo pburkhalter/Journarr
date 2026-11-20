@@ -22,6 +22,10 @@ services:
       # PUSHOVER_TOKEN: ${PUSHOVER_TOKEN}    # optional: alert when a service stays down
       # PUSHOVER_USER: ${PUSHOVER_USER}
       # JOURNARR_API_TOKEN: ${JOURNARR_API_TOKEN} # optional: Bearer token for scripts, >= 32 chars
+      # MCP for LLM clients (README "MCP server"): one token per client, >= 32 chars
+      # JOURNARR_MCP_TOKEN_MAC: ${JOURNARR_MCP_TOKEN_MAC}
+      # JOURNARR_MCP_WRITE: mac
+      # JOURNARR_MCP_REMOVE: "off"   # or approval (needs SSO)
       # OIDC_ALLOWED_GROUPS: journarr-users   # optional, comma-separated
       # OIDC_SCOPES: openid,profile,email     # if your IdP rejects the groups scope
 
