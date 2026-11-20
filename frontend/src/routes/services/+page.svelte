@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { getDiskSpace, getSessions, jellyfinScan } from '#lib/api.ts';
+	import { getDiskSpace, getSessions } from '#lib/api.ts';
 	import { clock } from '#lib/clock.svelte.ts';
 	import DiskSpaceCard from '#lib/components/DiskSpaceCard.svelte';
 	import ServiceCard from '#lib/components/ServiceCard.svelte';
 	import { live } from '#lib/live.svelte.ts';
-	import { confirmJellyfinScan } from '#lib/prompts.ts';
 	import type { DiskMount, JellySession, ServiceHealth } from '#lib/types.ts';
-	import { cn } from '#lib/utils.ts';
 
 	// The backend checks every service each 45 s (HEALTH_POLL_INTERVAL). A
 	// reading older than two passes means the checks or the live stream
@@ -44,25 +42,6 @@
 		return () => clearInterval(t);
 	});
 
-	let scanning = $state(false);
-	let scanMsg = $state<{ text: string; error: boolean } | null>(null);
-	let scanMsgTimer: ReturnType<typeof setTimeout>;
-	async function doScan() {
-		if (!(await confirmJellyfinScan())) return;
-		scanning = true;
-		scanMsg = null;
-		try {
-			await jellyfinScan();
-			scanMsg = { text: 'Scan started', error: false };
-		} catch {
-			scanMsg = { text: 'Scan failed', error: true };
-		} finally {
-			scanning = false;
-			clearTimeout(scanMsgTimer);
-			scanMsgTimer = setTimeout(() => (scanMsg = null), 5000);
-		}
-	}
-
 	type Tile = { health: ServiceHealth; kind?: string; label?: string; children: ServiceHealth[] };
 
 	// Tiles derive from the registry (order, label, folding). Instances with a
@@ -97,25 +76,9 @@
 	const anyStale = $derived(tiles.some((t) => isStale(t.health)));
 </script>
 
-<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-	<div>
-		<h1 class="text-xl font-semibold tracking-tight">Services</h1>
-		<p class="text-sm text-muted-foreground">Live health of every tool in the pipeline.</p>
-	</div>
-	<div class="flex items-center gap-2">
-		{#if scanMsg}
-			<span role="status" class={cn('text-xs', scanMsg.error ? 'text-destructive' : 'text-muted-foreground')}>
-				{scanMsg.text}
-			</span>
-		{/if}
-		<button
-			onclick={doScan}
-			disabled={scanning}
-			class="tap shrink-0 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
-		>
-			{scanning ? 'Scanning…' : 'Jellyfin scan'}
-		</button>
-	</div>
+<div class="mb-6">
+	<h1 class="text-xl font-semibold tracking-tight">Services</h1>
+	<p class="text-sm text-muted-foreground">Live health of every tool in the pipeline.</p>
 </div>
 
 {#if live.servicesLoaded && (!live.connected || anyStale)}

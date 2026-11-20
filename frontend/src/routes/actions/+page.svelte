@@ -188,18 +188,6 @@
 			<p role="alert" class="mb-3 max-w-2xl rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{flowError}</p>
 		{/if}
 		<div class="space-y-3">
-			<label class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
-				<span class="min-w-0">
-					<span class="block text-sm font-medium">Jellyfin scan on import</span>
-					<span class="text-[11px] text-muted-foreground">Trigger a library refresh after new files import (coalesced).</span>
-				</span>
-				<input
-					type="checkbox"
-					class="size-4 shrink-0 accent-primary"
-					checked={flowOn('jellyfin_scan_on_import')}
-					onchange={(e) => saveFlow({ jellyfin_scan_on_import: e.currentTarget.checked ? 'true' : 'false' })}
-				/>
-			</label>
 			<div class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
 				<span class="min-w-0">
 					<span class="block text-sm font-medium">Auto-retry stuck items</span>

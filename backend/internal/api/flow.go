@@ -8,7 +8,6 @@ import (
 
 // flowKeys whitelists the settings a client may write via PUT /api/flow.
 var flowKeys = map[string]bool{
-	"jellyfin_scan_on_import":     true,
 	"auto_retry_stuck_after_secs": true,
 	"notify_on_complete":          true,
 	"notify_stage":                true,

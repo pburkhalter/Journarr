@@ -119,7 +119,6 @@ export async function getMediaEvents(id: number): Promise<RawEvent[]> {
 
 export const retryItem = (mediaItemID: number) => post('/api/actions/retry', { media_item_id: mediaItemID });
 export const cancelRequest = (requestID: number) => post('/api/actions/cancel', { request_id: requestID });
-export const jellyfinScan = () => post('/api/actions/jellyfin-scan');
 
 export async function getRemovalPlan(requestID: number): Promise<RemovalPlan> {
 	return get<RemovalPlan>(`/api/requests/${requestID}/removal`);

@@ -85,16 +85,21 @@ func (s *Store) ApplyStage(ctx context.Context, itemID int64, cycle int, stage s
 	}
 	applied := n > 0
 
-	// Advance the derived pointer if (cycle, ordinal) is ahead of the current one.
+	// Advance the derived pointer if (cycle, ordinal) is ahead of the current
+	// one. An item that reaches import has its file in the library, so an
+	// error from an earlier attempt (or a manual import that fixed a soft
+	// failure) is cleared on the way.
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE media_items SET current_stage = ?, current_cycle = ?, stuck_since = NULL,
+			last_error = CASE WHEN (SELECT ordinal FROM stages WHERE key = ?) >=
+				(SELECT ordinal FROM stages WHERE key = 'imported') THEN '' ELSE last_error END,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND (
 			current_cycle < ?
 			OR (current_cycle = ? AND
 				(SELECT ordinal FROM stages WHERE key = media_items.current_stage) <
 				(SELECT ordinal FROM stages WHERE key = ?))
-		)`, stage, cycle, itemID, cycle, cycle, stage)
+		)`, stage, cycle, stage, itemID, cycle, cycle, stage)
 	if err != nil {
 		return applied, fmt.Errorf("advance current_stage: %w", err)
 	}
@@ -159,4 +164,14 @@ func (s *Store) NotifiedItemIDs(ctx context.Context, requestID int64) (map[int64
 		out[id] = true
 	}
 	return out, rows.Err()
+}
+
+// StagePastImport reports whether stage is "imported" or later (the file is
+// in the library). Unknown stages are not.
+func (s *Store) StagePastImport(ctx context.Context, stage string) bool {
+	var past bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE((SELECT ordinal FROM stages WHERE key = ?) >=
+			(SELECT ordinal FROM stages WHERE key = 'imported'), 0)`, stage).Scan(&past)
+	return err == nil && past
 }

@@ -1,1 +1,0 @@
-import{t as e}from"./TVLS2eWU.js";function t(){return e.ask({title:`Trigger Jellyfin scan`,message:`Start a full library refresh in Jellyfin?`,confirmLabel:`Scan`})}export{t};

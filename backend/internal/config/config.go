@@ -43,7 +43,7 @@ type Config struct {
 	PresencePollInterval time.Duration `env:"PRESENCE_POLL_INTERVAL" envDefault:"10m"`
 	StuckPollInterval    time.Duration `env:"STUCK_POLL_INTERVAL" envDefault:"5m"`
 
-	// FlowTickInterval paces the control-plane (notify, jellyfin_scan, retry
+	// FlowTickInterval paces the control-plane (notify, retry
 	// tasks). Its delays (60s notify grouping, 45s scan coalescing) assume a
 	// tick well below them; on the 5m stuck interval every notice arrived
 	// exactly five minutes after the item became available.

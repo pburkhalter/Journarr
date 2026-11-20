@@ -286,9 +286,17 @@ func (p *Projector) applyFailure(ctx context.Context, eventID int64, op FailureO
 	var reqID, firstItem, dlID int64
 	key := store.NormalizeDownloadID(op.DownloadID)
 
-	// markItem applies the error only when this failure belongs to the
-	// item's CURRENT attempt — a stale failure of a superseded download must
-	// not smear an error over a cycle that already moved on.
+	// markItem acts only when this failure belongs to the item's CURRENT
+	// attempt — a stale failure of a superseded download must not touch a
+	// cycle that already moved on. Then:
+	//   - past import: nothing; the file is in the library and a failed later
+	//     download (an upgrade, a re-grab) does not undo it;
+	//   - soft failure (manual interaction required): the download is still
+	//     there, so the item keeps its stage and shows the message;
+	//   - hard failure: Sonarr/Radarr blocklist the release and search again,
+	//     so the item starts a new attempt like a Retry (back to "requested",
+	//     error and stuck flag cleared). The reason stays on the failed
+	//     download row.
 	markItem := func(item *store.MediaItem) {
 		if key != "" {
 			linked, _ := p.Store.CycleForItemDownload(ctx, item.ID, key)
@@ -304,7 +312,15 @@ func (p *Projector) applyFailure(ctx context.Context, eventID int64, op FailureO
 				}
 			}
 		}
-		_ = p.Store.SetItemError(ctx, item.ID, msg)
+		switch {
+		case p.Store.StagePastImport(ctx, item.CurrentStage):
+		case op.Soft:
+			_ = p.Store.SetItemError(ctx, item.ID, msg)
+		default:
+			if _, err := p.Store.BumpItemCycle(ctx, item.ID); err != nil {
+				p.Log.Warn("projector: new attempt after failure", "item", item.ID, "err", err)
+			}
+		}
 	}
 
 	if key != "" {
@@ -313,13 +329,18 @@ func (p *Projector) applyFailure(ctx context.Context, eventID int64, op FailureO
 			if !op.Soft && dl.State != "imported" && dl.State != "canceled" {
 				_ = p.Store.SetDownloadState(ctx, dl.ID, "failed", msg)
 			}
+			// A download Journarr canceled itself (Cancel, Retry) is not a new
+			// failure of the item; Sonarr/Radarr only report the queue delete.
+			ours := dl.State == "canceled"
 			itemIDs, _ := p.Store.ItemIDsForDownload(ctx, dl.ID)
 			for _, id := range itemIDs {
 				item, err := p.Store.GetMediaItem(ctx, id)
 				if err != nil || item == nil {
 					continue
 				}
-				markItem(item)
+				if !ours {
+					markItem(item)
+				}
 				if item.RequestID != nil {
 					reqID = *item.RequestID
 					p.touch(reqID)

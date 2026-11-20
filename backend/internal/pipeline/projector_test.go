@@ -535,3 +535,98 @@ func TestTranscodeIsOptionalWaypoint(t *testing.T) {
 		t.Fatalf("without transcode, want available, got %s", got.CurrentStage)
 	}
 }
+
+// failureSetup files an approved movie request with one grab of dl-one.
+func failureSetup(t *testing.T, seerrID int64) (*Projector, *store.Store, *MovieRef, int64) {
+	t.Helper()
+	ctx := context.Background()
+	p, s := testProjector(t)
+	movie := &MovieRef{RadarrID: 1, TmdbID: 100 + seerrID, Title: "Film"}
+	emit(t, s, "seerr", "approved", SeerrOp{
+		SeerrRequestID: seerrID, Kind: "approved", MediaType: "movie", TmdbID: movie.TmdbID, Title: "Film",
+	})
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "dl-one", Movie: movie})
+	p.drain(ctx)
+	req, _ := s.FindRequestBySeerrID(ctx, seerrID)
+	return p, s, movie, req.ID
+}
+
+func onlyItem(t *testing.T, s *store.Store, reqID int64) store.MediaItem {
+	t.Helper()
+	items, err := s.ListItemsForRequest(context.Background(), reqID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items = %v, err %v", items, err)
+	}
+	return items[0]
+}
+
+// A wrong release marked as failed in Radarr (blocklisted, Radarr searches
+// again) must not leave the item at "downloaded" with an error forever: it
+// starts a new attempt, like a Retry.
+func TestHardFailureStartsNewAttempt(t *testing.T) {
+	ctx := context.Background()
+	p, s, movie, reqID := failureSetup(t, 21)
+	emit(t, s, "radarr", "failure", FailureOp{Arr: "radarr", DownloadID: "dl-one",
+		Message: "Manually marked as failed", Movie: movie})
+	p.drain(ctx)
+
+	it := onlyItem(t, s, reqID)
+	if it.CurrentCycle != 2 || it.CurrentStage != "requested" || it.LastError != "" {
+		t.Fatalf("want requested/2 without error, got %s/%d %q", it.CurrentStage, it.CurrentCycle, it.LastError)
+	}
+	dl, _ := s.FindDownloadByClientID(ctx, "dl-one")
+	if dl.State != "failed" || dl.LastError != "Manually marked as failed" {
+		t.Fatalf("the reason must stay on the download: %+v", dl)
+	}
+	// The next grab lands in the new cycle without another bump.
+	emit(t, s, "radarr", "grab", GrabOp{Arr: "radarr", DownloadID: "dl-two", Movie: movie})
+	p.drain(ctx)
+	if it := onlyItem(t, s, reqID); it.CurrentCycle != 2 || it.CurrentStage != "grabbed" {
+		t.Fatalf("after regrab want grabbed/2, got %s/%d", it.CurrentStage, it.CurrentCycle)
+	}
+}
+
+func TestSoftFailureKeepsStageAndImportClearsIt(t *testing.T) {
+	ctx := context.Background()
+	p, s, movie, reqID := failureSetup(t, 22)
+	emit(t, s, "radarr", "failure", FailureOp{Arr: "radarr", DownloadID: "dl-one", Soft: true,
+		Message: "Manual Import required", Movie: movie})
+	p.drain(ctx)
+	if it := onlyItem(t, s, reqID); it.CurrentCycle != 1 || it.CurrentStage != "grabbed" || it.LastError != "Manual Import required" {
+		t.Fatalf("soft failure: got %s/%d %q", it.CurrentStage, it.CurrentCycle, it.LastError)
+	}
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "dl-one", Movie: movie, MoviePath: "/m/f.mkv"})
+	p.drain(ctx)
+	if it := onlyItem(t, s, reqID); it.CurrentStage != "imported" || it.LastError != "" {
+		t.Fatalf("import must clear the error: got %s %q", it.CurrentStage, it.LastError)
+	}
+}
+
+func TestFailureAfterImportChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	p, s, movie, reqID := failureSetup(t, 23)
+	emit(t, s, "radarr", "import", ImportOp{Arr: "radarr", DownloadID: "dl-one", Movie: movie, MoviePath: "/m/f.mkv"})
+	p.drain(ctx)
+	emit(t, s, "radarr", "failure", FailureOp{Arr: "radarr", DownloadID: "dl-one",
+		Message: "Manually marked as failed", Movie: movie})
+	p.drain(ctx)
+	if it := onlyItem(t, s, reqID); it.CurrentStage != "imported" || it.CurrentCycle != 1 || it.LastError != "" {
+		t.Fatalf("got %s/%d %q", it.CurrentStage, it.CurrentCycle, it.LastError)
+	}
+}
+
+// Cancel removes the queue entry itself; the failure Radarr then reports is
+// not a new failure of the item.
+func TestFailureOfACanceledDownloadIsIgnored(t *testing.T) {
+	ctx := context.Background()
+	p, s, movie, reqID := failureSetup(t, 24)
+	dl, _ := s.FindDownloadByClientID(ctx, "dl-one")
+	if err := s.SetDownloadState(ctx, dl.ID, "canceled", "canceled by user"); err != nil {
+		t.Fatal(err)
+	}
+	emit(t, s, "radarr", "failure", FailureOp{Arr: "radarr", DownloadID: "dl-one", Message: "removed", Movie: movie})
+	p.drain(ctx)
+	if it := onlyItem(t, s, reqID); it.CurrentCycle != 1 || it.LastError != "" {
+		t.Fatalf("got %s/%d %q", it.CurrentStage, it.CurrentCycle, it.LastError)
+	}
+}

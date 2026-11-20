@@ -102,11 +102,6 @@ func (c *Controller) intVal(key string, def int) int {
 // It must stay cheap: a cached-settings read plus at most one enqueue.
 func (c *Controller) OnStageApplied(itemID, reqID int64, stage string, cycle int) {
 	ctx := context.Background()
-	if stage == "imported" && c.on("jellyfin_scan_on_import") {
-		// Coalesce a burst of season imports into one delayed scan.
-		_, _ = c.Store.EnqueueFlowTask(ctx, "jellyfin_scan", "", 0, "", "jellyfin_scan",
-			time.Now().Add(45*time.Second))
-	}
 	if reqID > 0 && c.on("notify_on_complete") && stage == c.get("notify_stage", "available") {
 		// One pending notify per request, delayed to group a season's episodes
 		// into a single message. Cleared on finish so a later completion re-fires.
@@ -161,8 +156,6 @@ func (c *Controller) drain(ctx context.Context) {
 
 func (c *Controller) exec(ctx context.Context, task store.FlowTask) error {
 	switch task.Kind {
-	case "jellyfin_scan":
-		return c.Acts.JellyfinScan(ctx)
 	case "retry":
 		return c.Acts.Retry(ctx, task.TargetID)
 	case "notify":

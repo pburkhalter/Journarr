@@ -77,23 +77,23 @@ func TestCSRFRejectsCrossSiteAndNonJSON(t *testing.T) {
 
 	// A cross-site form post (text/plain needs no preflight) must not reach
 	// the handler.
-	rec := do(h, http.MethodPost, "/api/actions/jellyfin-scan", `{}`,
+	rec := do(h, http.MethodPost, "/api/actions/execute", `{"kind":"library-scan"}`,
 		map[string]string{"Content-Type": "text/plain"})
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("text/plain: %d, want 415", rec.Code)
 	}
-	rec = do(h, http.MethodPost, "/api/actions/jellyfin-scan", `{}`,
+	rec = do(h, http.MethodPost, "/api/actions/execute", `{"kind":"library-scan"}`,
 		map[string]string{"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("cross-site: %d, want 403", rec.Code)
 	}
-	rec = do(h, http.MethodPost, "/api/actions/jellyfin-scan", `{}`,
+	rec = do(h, http.MethodPost, "/api/actions/execute", `{"kind":"library-scan"}`,
 		map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("foreign origin: %d, want 403", rec.Code)
 	}
 	// Behind the proxy the public origin is trusted even if Host differs.
-	rec = do(h, http.MethodPost, "/api/actions/jellyfin-scan", `{}`,
+	rec = do(h, http.MethodPost, "/api/actions/execute", `{"kind":"library-scan"}`,
 		map[string]string{"Content-Type": "application/json", "Origin": "https://status.example.com"})
 	if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnsupportedMediaType {
 		t.Fatalf("public origin rejected: %d", rec.Code)
@@ -149,7 +149,7 @@ func TestRemoveAnswersPlanChanged(t *testing.T) {
 func TestActionAuditRecordsActor(t *testing.T) {
 	h, st, _ := newTestRouter(t)
 	// Jellyfin is not configured, so the scan fails — but it is audited.
-	_ = do(h, http.MethodPost, "/api/actions/jellyfin-scan", `{}`, sameOrigin)
+	_ = do(h, http.MethodPost, "/api/actions/execute", `{"kind":"library-scan"}`, sameOrigin)
 	list, err := st.RecentActions(context.Background(), 5)
 	if err != nil || len(list) == 0 {
 		t.Fatalf("no audit row: %v", err)

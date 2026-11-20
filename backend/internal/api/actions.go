@@ -14,7 +14,6 @@ func (s *server) actionRoutes(r chi.Router) {
 	r.Get("/actions", s.listActions)
 	r.Get("/actions/log", s.actionLog)
 	r.Post("/actions/execute", s.executeAction)
-	r.Post("/actions/jellyfin-scan", s.jellyfinScan)
 	r.Post("/actions/retry", s.retry)
 	r.Post("/actions/cancel", s.cancel)
 	r.Post("/actions/remove", s.remove)
@@ -55,16 +54,6 @@ func (s *server) executeAction(w http.ResponseWriter, req *http.Request) {
 	defer done()
 	if err := s.Actions.Execute(ctx, body.Kind, body.Params); err != nil {
 		httpError(w, s.Log, "execute action", err)
-		return
-	}
-	writeJSON(w, map[string]string{"status": "ok"})
-}
-
-func (s *server) jellyfinScan(w http.ResponseWriter, req *http.Request) {
-	ctx, done := s.detach(req)
-	defer done()
-	if err := s.Actions.JellyfinScan(ctx); err != nil {
-		httpError(w, s.Log, "jellyfin scan", err)
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
