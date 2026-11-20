@@ -22,6 +22,20 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
 	return `${Math.round(h / 24)}d ago`;
 }
 
+/** "in 3h" for a time ahead of now, "now" once it has passed. */
+export function timeUntil(iso: string, now: number = Date.now()): string {
+	const then = new Date(iso).getTime();
+	if (Number.isNaN(then)) return '–';
+	const s = Math.round((then - now) / 1000);
+	if (s <= 0) return 'now';
+	if (s < 60) return `in ${s}s`;
+	const m = Math.round(s / 60);
+	if (m < 60) return `in ${m}m`;
+	const h = Math.round(m / 60);
+	if (h < 48) return `in ${h}h`;
+	return `in ${Math.round(h / 24)}d`;
+}
+
 /** Local date and time, or the raw value if it does not parse. */
 export function formatTime(iso: string): string {
 	const d = new Date(iso);

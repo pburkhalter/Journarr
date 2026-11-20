@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"github.com/pburkhalter/journarr/internal/actions"
+	"github.com/pburkhalter/journarr/internal/approval"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/store"
 )
@@ -159,6 +160,55 @@ func TestActionAuditRecordsActor(t *testing.T) {
 	rec := do(h, http.MethodGet, "/api/actions/log", "", nil)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"actor":"anonymous"`) {
 		t.Fatalf("action log: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// In open LAN mode nobody may approve a removal: the request stays pending
+// and nothing is deleted, whatever the caller sends.
+func TestApprovalNeedsSSO(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tmdb := int64(603)
+	reqID, _ := st.UpsertRequest(ctx, store.Request{MediaType: "movie", TmdbID: &tmdb, Title: "The Matrix"})
+	log := quietLog()
+	acts := &actions.Actions{Store: st, Log: log}
+	appr := &approval.Service{Store: st, Actions: acts, Log: log}
+	h := NewRouter(Deps{Store: st, Broker: NewBroker(), Auth: auth.New(auth.Config{}, log), Actions: acts,
+		Log: log, Dist: fstest.MapFS{}, Approvals: appr})
+
+	a, _, err := appr.Request(ctx, actions.Title{RequestID: reqID}, "watched", "mcp:mac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := do(h, http.MethodGet, "/api/approvals", "", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"requested_by":"mcp:mac"`) {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(h, http.MethodGet, "/api/approvals/"+itoa(a.ID), "", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"plan_changed":false`) {
+		t.Fatalf("detail: %d %s", rec.Code, rec.Body)
+	}
+	for _, hdr := range []map[string]string{
+		sameOrigin,
+		{"Content-Type": "application/json", "Authorization": "Bearer whatever-token-whatever-token-x"},
+	} {
+		rec = do(h, http.MethodPost, "/api/approvals/"+itoa(a.ID)+"/approve", `{}`, hdr)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("approve %v: %d %s", hdr, rec.Code, rec.Body)
+		}
+	}
+	if got, _ := appr.Get(ctx, a.ID); got.Status != "pending" {
+		t.Fatalf("status = %s, want pending", got.Status)
+	}
+	if r, _ := st.GetRequest(ctx, reqID); r == nil {
+		t.Fatal("request was removed")
 	}
 }
 

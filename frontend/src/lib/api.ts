@@ -1,4 +1,6 @@
 import type {
+	Approval,
+	ApprovalDetail,
 	Action,
 	DiskMount,
 	Instance,
@@ -172,4 +174,35 @@ export async function putFlowSettings(settings: Record<string, string>): Promise
 	if (!res.ok) throw new ApiError('/api/flow', res.status);
 	const body = (await res.json()) as { settings?: Record<string, string> };
 	return body.settings ?? {};
+}
+
+// ---- removal requests from MCP clients (approved only with an SSO session)
+
+export async function getApprovals(onlyPending = false): Promise<{ approvals: Approval[]; enabled: boolean; sso?: boolean }> {
+	return get(`/api/approvals${onlyPending ? '?status=pending' : ''}`);
+}
+
+export async function getApproval(id: number): Promise<ApprovalDetail> {
+	return get<ApprovalDetail>(`/api/approvals/${id}`);
+}
+
+export type ApprovalConflict = 'watching' | 'plan_changed' | 'not_pending' | 'failed';
+
+export interface DecisionResult {
+	ok: boolean;
+	conflict?: ApprovalConflict;
+	error?: string;
+	approval?: Approval;
+}
+
+/** Approve (runs the removal) or reject a request. 409 carries a code. */
+export async function decideApproval(id: number, decision: 'approve' | 'reject', force = false): Promise<DecisionResult> {
+	const res = await request(`/api/approvals/${id}/${decision}`, 'POST', decision === 'approve' ? { force } : {});
+	const body = (await res.json().catch(() => ({}))) as { error?: string; code?: ApprovalConflict; approval?: Approval };
+	return {
+		ok: res.ok,
+		conflict: res.status === 409 ? (body.code ?? 'failed') : undefined,
+		error: res.ok ? undefined : (body.error ?? `HTTP ${res.status}`),
+		approval: body.approval
+	};
 }

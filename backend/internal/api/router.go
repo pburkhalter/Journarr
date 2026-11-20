@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/pburkhalter/journarr/internal/actions"
+	"github.com/pburkhalter/journarr/internal/approval"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/flow"
 	"github.com/pburkhalter/journarr/internal/ingest"
@@ -47,6 +48,8 @@ type Deps struct {
 	// MCP, when set, is mounted at /mcp outside the SSO gate; it brings its
 	// own bearer-token authentication.
 	MCP http.Handler
+	// Approvals holds the removal requests of MCP clients; nil = feature off.
+	Approvals *approval.Service
 }
 
 // server holds the dependencies the handlers share.
@@ -84,6 +87,7 @@ func NewRouter(d Deps) http.Handler {
 			s.flowRoutes(r)
 			s.requestRoutes(r)
 			s.actionRoutes(r)
+			s.approvalRoutes(r)
 			r.Get("/events/stream", d.Broker.ServeHTTP)
 		})
 	})

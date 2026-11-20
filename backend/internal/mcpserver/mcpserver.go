@@ -55,7 +55,9 @@ type Deps struct {
 	Registry *registry.Registry
 	Storage  *storage.Service
 	Updates  *updates.Checker
-	Log      *slog.Logger
+	// Approvals is required for Remove == approval.
+	Approvals Approvals
+	Log       *slog.Logger
 }
 
 // Server is the /mcp handler.
@@ -98,6 +100,9 @@ func New(cfg Config, d Deps) *Server {
 	}
 	s.registerReadTools()
 	s.registerWriteTools()
+	if cfg.Remove == "approval" && d.Approvals != nil {
+		s.registerRemovalTools()
+	}
 
 	s.byScope = map[string]*mcp.Server{
 		ScopeRead:  s.build(false),

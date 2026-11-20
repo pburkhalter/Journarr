@@ -1,4 +1,4 @@
-import { getInstances, getMe, getServices, getStages } from './api';
+import { getApprovals, getInstances, getMe, getServices, getStages } from './api';
 import { STAGES, type Instance, type Me, type ServiceHealth, type Stage } from './types';
 
 /** Longest wait between reconnect attempts. */
@@ -28,6 +28,12 @@ class LiveStore {
 	me = $state<Me | null>(null);
 	/** bumped on every pipeline change — pages refetch via $effect */
 	pipelineTick = $state(0);
+	/** removal requests from MCP clients waiting for a decision */
+	pendingApprovals = $state(0);
+	/** true when the backend accepts removal requests (JOURNARR_MCP_REMOVE=approval) */
+	approvalsEnabled = $state(false);
+	/** bumped on every approval change — the approvals page refetches */
+	approvalTick = $state(0);
 	/** live download progress, keyed by download id */
 	progress = $state<Record<number, { bytes_downloaded: number; bytes_total: number }>>({});
 
@@ -58,10 +64,12 @@ class LiveStore {
 		this.started = true;
 		void this.loadMe();
 		void this.refresh();
+		void this.loadApprovals();
 		this.connect();
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState !== 'visible') return;
 			void this.refresh();
+			void this.loadApprovals();
 			this.pipelineTick++;
 			if (this.es?.readyState !== EventSource.OPEN) {
 				this.attempt = 0;
@@ -104,6 +112,10 @@ class LiveStore {
 		es.addEventListener('media.stage', bump);
 		es.addEventListener('request.updated', bump);
 		es.addEventListener('request.removed', bump);
+		es.addEventListener('approval.updated', () => {
+			this.approvalTick++;
+			void this.loadApprovals();
+		});
 		es.addEventListener('download.progress', (e) => {
 			try {
 				const p = JSON.parse((e as MessageEvent).data) as {
@@ -129,6 +141,16 @@ class LiveStore {
 			await this.loadMe();
 			this.connect();
 		}, delay);
+	}
+
+	async loadApprovals() {
+		try {
+			const r = await getApprovals(true);
+			this.approvalsEnabled = r.enabled;
+			this.pendingApprovals = r.approvals.length;
+		} catch {
+			// older backend or unreachable — the nav simply shows no badge
+		}
 	}
 
 	async loadMe() {

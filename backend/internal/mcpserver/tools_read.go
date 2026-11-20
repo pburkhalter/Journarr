@@ -25,7 +25,7 @@ type noArgs struct{}
 
 // TitleRef names a movie or series. TMDB ids come from search_titles.
 type TitleRef struct {
-	MediaType string `json:"media_type" jsonschema:"movie or tv"`
+	MediaType string `json:"media_type,omitempty" jsonschema:"movie or tv"`
 	TmdbID    int64  `json:"tmdb_id,omitempty" jsonschema:"TMDB id (from search_titles); for series either this or tvdb_id"`
 	TvdbID    int64  `json:"tvdb_id,omitempty" jsonschema:"TVDB id of a series (Sonarr's key); optional"`
 }
@@ -121,6 +121,11 @@ func (s *Server) getOverview(ctx context.Context, _ noArgs) (any, error) {
 		"stuck_items":       stuck,
 		"journarr_ui":       s.cfg.PublicURL,
 		"removal_approvals": s.cfg.Remove,
+	}
+	if s.d.Approvals != nil && s.cfg.Remove == "approval" {
+		if n, err := s.d.Approvals.CountPending(ctx); err == nil {
+			out["pending_removal_requests"] = n
+		}
 	}
 	if s.d.Storage != nil {
 		type mount struct {

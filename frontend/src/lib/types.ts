@@ -266,3 +266,30 @@ export function parseDetail(h: ServiceHealth): ServiceDetail {
 		return {};
 	}
 }
+
+/** A removal an MCP client asked for; the owner approves or rejects it. */
+export interface Approval {
+	id: number;
+	kind: 'remove';
+	title: string;
+	target: { media_type?: string; tmdb_id?: number; tvdb_id?: number; request_id?: number };
+	plan: RemovalPlan;
+	plan_hash: string;
+	reason?: string;
+	requested_by: string;
+	status: 'pending' | 'approved' | 'rejected' | 'expired' | 'executed' | 'failed';
+	created_at: string;
+	expires_at: string;
+	decided_at?: string;
+	decided_by?: string;
+	result?: { error?: string; steps?: RemovalStep[] };
+}
+
+export interface ApprovalDetail {
+	approval: Approval;
+	/** a fresh plan, only for pending requests */
+	current_plan?: RemovalPlan;
+	current_plan_error?: string;
+	/** true when the title changed since the request — approving would fail */
+	plan_changed?: boolean;
+}

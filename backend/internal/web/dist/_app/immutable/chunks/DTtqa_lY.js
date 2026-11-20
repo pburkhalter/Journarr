@@ -1,0 +1,1 @@
+import{t as e}from"./DtP92u_L.js";function t(){return e.ask({title:`Trigger Jellyfin scan`,message:`Start a full library refresh in Jellyfin?`,confirmLabel:`Scan`})}export{t};

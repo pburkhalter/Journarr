@@ -17,6 +17,7 @@ import (
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/alert"
 	"github.com/pburkhalter/journarr/internal/api"
+	"github.com/pburkhalter/journarr/internal/approval"
 	"github.com/pburkhalter/journarr/internal/audit"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/config"
@@ -357,6 +358,18 @@ func run() error {
 
 	storageSvc := &storage.Service{Reg: reg, Log: log}
 
+	// Removal requests from MCP clients wait here for the owner's decision in
+	// the UI (SSO session only); expired ones close every few minutes.
+	var approvals *approval.Service
+	if cfg.MCPRemove == "approval" {
+		approvals = &approval.Service{Store: st, Actions: acts, Log: log, TTL: approval.DefaultTTL, Publish: broker.Publish}
+		spawn(func() { approvals.Run(ctx, 5*time.Minute) })
+	}
+	var mcpApprovals mcpserver.Approvals
+	if approvals != nil {
+		mcpApprovals = approvals
+	}
+
 	// MCP server for LLM clients: one bearer token per client, read or
 	// read+write scope; removals only as requests the owner approves in the UI.
 	var mcpHandler http.Handler
@@ -364,7 +377,8 @@ func run() error {
 		Tokens: cfg.MCPTokens, Writers: cfg.MCPWrite, Remove: cfg.MCPRemove,
 		WriteLimit: cfg.MCPWriteLimit, PublicURL: cfg.PublicURL, Version: versionStr,
 	}, mcpserver.Deps{
-		Store: st, Actions: acts, Registry: reg, Storage: storageSvc, Updates: updateChecker, Log: log,
+		Store: st, Actions: acts, Registry: reg, Storage: storageSvc, Updates: updateChecker,
+		Approvals: mcpApprovals, Log: log,
 	}); m != nil {
 		mcpHandler = m
 		clientNames := make([]string, 0, len(cfg.MCPTokens))
@@ -395,6 +409,7 @@ func run() error {
 		PublicURL: cfg.PublicURL,
 		Tasks:     &bg,
 		MCP:       mcpHandler,
+		Approvals: approvals,
 	})
 	srv := &http.Server{
 		Addr:              cfg.Listen,

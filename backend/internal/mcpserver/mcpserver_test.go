@@ -288,7 +288,7 @@ func TestWriteLimit(t *testing.T) {
 
 func TestHealthReason(t *testing.T) {
 	cases := map[string]string{
-		`{"error":"dial tcp: refused"}`: "dial tcp: refused",
+		`{"error":"dial tcp: refused"}`:                   "dial tcp: refused",
 		`{"health_messages":["Indexer down","Disk low"]}`: "Indexer down; Disk low",
 		`{"restart_required":true}`:                       "Seerr asks for a restart",
 		`{"poller":"TorBox poller stalled for 20m"}`:      "TorBox poller stalled for 20m",
@@ -298,5 +298,75 @@ func TestHealthReason(t *testing.T) {
 		if got := healthReason(in); got != want {
 			t.Errorf("healthReason(%s) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// fakeApprovals records removal requests.
+type fakeApprovals struct {
+	requested []actions.Title
+	by        []string
+}
+
+func (f *fakeApprovals) Request(_ context.Context, t actions.Title, reason, by string) (*store.Approval, bool, error) {
+	f.requested = append(f.requested, t)
+	f.by = append(f.by, by)
+	return &store.Approval{ID: 5, Title: "The Matrix", Status: "pending", RequestedBy: by, Reason: reason,
+		Plan: `{"arr":"radarr","files":1,"size_bytes":2147483648}`}, false, nil
+}
+
+func (f *fakeApprovals) Get(_ context.Context, id int64) (*store.Approval, error) {
+	return &store.Approval{ID: id, Title: "The Matrix", Status: "executed", DecidedBy: "owner@example.com",
+		Result: `{"steps":[{"step":"radarr","status":"ok"}]}`}, nil
+}
+
+func (f *fakeApprovals) CountPending(context.Context) (int, error) { return len(f.requested), nil }
+
+func TestRemovalToolsOnlyRequest(t *testing.T) {
+	_, st, _, _ := newServer(t, 30)
+	fa := &fakeApprovals{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := New(Config{Tokens: map[string]string{"mac": macToken, "ha": haToken}, Writers: []string{"mac"},
+		Remove: "approval", WriteLimit: 30, PublicURL: "https://status.example.com"},
+		Deps{Store: st, Actions: &actions.Actions{Store: st, Log: log}, Approvals: fa, Log: log})
+	srv := httptest.NewServer(s)
+	t.Cleanup(srv.Close)
+
+	write := toolNames(t, connect(t, srv.URL, macToken))
+	for _, want := range []string{"plan_removal", "request_removal", "get_removal_status"} {
+		if !slices.Contains(write, want) {
+			t.Fatalf("write client misses %s: %v", want, write)
+		}
+	}
+	for _, name := range write {
+		if strings.Contains(name, "approve") || name == "remove_title" {
+			t.Fatalf("a tool that executes removals exists: %s", name)
+		}
+	}
+	if read := toolNames(t, connect(t, srv.URL, haToken)); slices.Contains(read, "request_removal") {
+		t.Fatalf("read client sees request_removal: %v", read)
+	}
+
+	cs := connect(t, srv.URL, macToken)
+	out, isErr := call(t, cs, "request_removal", map[string]any{"media_type": "movie", "tmdb_id": 603, "reason": "watched"})
+	if isErr || out["approve_url"] != "https://status.example.com/approvals?id=5" || out["status"] != "pending" {
+		t.Fatalf("request_removal = %v", out)
+	}
+	if len(fa.by) != 1 || fa.by[0] != "mcp:mac" || fa.requested[0].TmdbID != 603 {
+		t.Fatalf("approvals got %v by %v", fa.requested, fa.by)
+	}
+	// by Journarr request id alone, without media_type
+	if out, isErr := call(t, cs, "request_removal", map[string]any{"request_id": 1, "reason": "watched"}); isErr {
+		t.Fatalf("request_removal by request_id: %v", out)
+	}
+	if fa.requested[1].RequestID != 1 {
+		t.Fatalf("request id not passed: %+v", fa.requested[1])
+	}
+	out, _ = call(t, cs, "get_removal_status", map[string]any{"approval_id": 5})
+	if out["status"] != "executed" || out["decided_by"] != "owner@example.com" {
+		t.Fatalf("status = %v", out)
+	}
+	out, _ = call(t, cs, "get_overview", map[string]any{})
+	if out["pending_removal_requests"].(float64) != 2 {
+		t.Fatalf("overview pending = %v", out["pending_removal_requests"])
 	}
 }

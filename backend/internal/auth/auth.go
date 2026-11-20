@@ -311,6 +311,44 @@ func (a *Auth) RequireAPI(next http.Handler) http.Handler {
 	})
 }
 
+// SessionUser returns the user of a real SSO session cookie — never the
+// synthetic API-token user. nil when SSO is off or there is no session.
+func (a *Auth) SessionUser(r *http.Request) *User {
+	if !a.Enabled() {
+		return nil
+	}
+	sess, err := a.store.Get(r, sessionName)
+	if err != nil || sess.IsNew {
+		return nil
+	}
+	u, _ := sess.Values[userKey].(*User)
+	return u
+}
+
+// RequireSession admits only a person logged in through SSO: no bearer token
+// of any kind (API or MCP), and nothing at all in open LAN mode. It guards
+// the decisions a token holder must not be able to make for the owner, such
+// as approving a removal an LLM asked for.
+func (a *Auth) RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deny := func(status int, msg string) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":"` + msg + `"}`))
+		}
+		switch {
+		case !a.Enabled():
+			deny(http.StatusForbidden, "this needs SSO: set OIDC_ISSUER_URL")
+		case r.Header.Get("Authorization") != "":
+			deny(http.StatusForbidden, "tokens cannot do this; log in with SSO")
+		case a.SessionUser(r) == nil:
+			deny(http.StatusUnauthorized, "unauthenticated")
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
 // RequireBrowser redirects unauthenticated page loads to the login flow.
 func (a *Auth) RequireBrowser(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

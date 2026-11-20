@@ -27,6 +27,10 @@
 		{ href: '/actions', label: 'Actions', active: (u) => u.pathname === '/actions' },
 		{ href: '/services', label: 'Services', active: (u) => u.pathname === '/services' }
 	];
+	const approvalsItem = { href: '/approvals', label: 'Approvals', active: (u: URL) => u.pathname === '/approvals' };
+	// The Approvals entry appears only when removal requests are on (or one
+	// is still waiting), so a stack without MCP removals keeps its old nav.
+	const navItems = $derived(live.approvalsEnabled || live.pendingApprovals > 0 ? [...nav, approvalsItem] : nav);
 </script>
 
 <!--
@@ -46,6 +50,16 @@
 					<div class="hidden text-[11px] text-muted-foreground md:block">request flow tracker</div>
 				</div>
 			</a>
+			<!-- mobile: waiting removal requests stay visible even when the nav
+			     scrolls the Approvals entry out of view -->
+			{#if live.pendingApprovals > 0}
+				<a
+					href="/approvals"
+					class="tap ml-auto rounded-full bg-destructive px-2.5 py-1 text-[11px] font-semibold text-background md:hidden"
+				>
+					{live.pendingApprovals} to approve
+				</a>
+			{/if}
 			<!-- mobile-only live indicator (desktop shows it in the footer) -->
 			<span class="flex items-center gap-1.5 text-[11px] text-muted-foreground md:hidden" role="status">
 				<span
@@ -56,7 +70,7 @@
 			</span>
 		</div>
 		<nav class="flex gap-1 overflow-x-auto px-3 pb-2 md:flex-col md:py-2">
-			{#each nav as item (item.href)}
+			{#each navItems as item (item.href)}
 				{@const active = item.active(page.url)}
 				<a
 					href={item.href}
@@ -69,6 +83,14 @@
 					)}
 				>
 					{item.label}
+					{#if item.href === '/approvals' && live.pendingApprovals > 0}
+						<span
+							class="ml-2 rounded-full bg-destructive px-1.5 text-[11px] font-semibold leading-5 text-background"
+							aria-label="{live.pendingApprovals} waiting"
+						>
+							{live.pendingApprovals}
+						</span>
+					{/if}
 				</a>
 			{/each}
 		</nav>

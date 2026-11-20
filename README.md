@@ -132,6 +132,18 @@ claude mcp add --transport http journarr https://journarr.example.com/mcp \
   --header "Authorization: Bearer $JOURNARR_MCP_TOKEN_MAC"
 ```
 
+### Removals need your approval
+
+With `JOURNARR_MCP_REMOVE=approval` (needs SSO), write clients also get
+`plan_removal`, `request_removal` and `get_removal_status`. A request stores
+the removal plan the client saw and its `plan_hash`; **nothing is deleted**
+until you approve it on the **Approvals** page (nav badge, also on the
+phone). Approving needs an SSO session — the API token and every MCP token
+get 403, and in open LAN mode nobody can approve. Approving re-plans and
+deletes only if the hash still matches (else the request fails with
+`plan_changed`). Requests expire after 72 h; there is no push notification
+on purpose. There is no MCP tool that approves.
+
 ## Alerts
 
 With Pushover credentials set, Journarr reports a service that stays **down**
