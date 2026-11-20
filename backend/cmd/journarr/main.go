@@ -106,6 +106,12 @@ func run() error {
 			checks = append(checks, poll.Check{Service: inst.ID, Fn: hc.CheckHealth})
 		}
 	}
+	// One Pushover sender for Journarr's own health alerts and for relayed
+	// alerts of other systems (TrueNAS, see ingest.Handler.Relay).
+	var alertSender alert.Sender
+	if cfg.PushoverToken != "" && cfg.PushoverUser != "" {
+		alertSender = &alert.Pushover{Token: cfg.PushoverToken, User: cfg.PushoverUser}
+	}
 	if len(checks) == 0 {
 		log.Warn("no services configured — set SEERR_URL, SONARR_URL, … to monitor the stack")
 	} else {
@@ -116,9 +122,9 @@ func run() error {
 			Checks:   checks,
 			Publish:  broker.Publish,
 		}
-		if cfg.PushoverToken != "" && cfg.PushoverUser != "" {
+		if alertSender != nil {
 			al := &alert.Alerter{
-				Sender:        &alert.Pushover{Token: cfg.PushoverToken, User: cfg.PushoverUser},
+				Sender:        alertSender,
 				Log:           log,
 				DownAfter:     cfg.AlertDownAfter,
 				DegradedAfter: cfg.AlertDegradedAfter,
@@ -148,7 +154,11 @@ func run() error {
 	var ing *ingest.Handler
 	if cfg.WebhookToken != "" {
 		ing = &ingest.Handler{Store: st, Log: log, Token: cfg.WebhookToken, Wake: projector.Wake}
-		log.Info("webhook ingestion enabled", "sources", "seerr, sonarr, radarr")
+		if alertSender != nil {
+			ing.Relay = alertSender.Send
+		}
+		log.Info("webhook ingestion enabled", "sources", "seerr, sonarr, radarr, arrarr, tdarr",
+			"truenas_relay", ing.Relay != nil)
 	} else {
 		log.Warn("JOURNARR_WEBHOOK_TOKEN not set — webhook ingestion disabled, pollers only")
 	}

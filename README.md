@@ -105,6 +105,13 @@ Two rules keep one problem to one message:
   checks stay on their tiles but do not make them degraded: Prowlarr reports
   the same indexer failure, so it alerts once instead of three times.
 
+TrueNAS relay: TrueNAS 25.10 has no Pushover alert service. Add a **Slack**
+alert service with the URL
+`http://<journarr>:8484/webhook/truenas?token=$JOURNARR_WEBHOOK_TOKEN`; Journarr
+forwards each alert text as a Pushover message titled "TrueNAS" (nothing is
+stored). The route exists only when the Pushover values and the webhook token
+are set.
+
 ```
 PUSHOVER_TOKEN=…   # application token
 PUSHOVER_USER=…    # user or group key
