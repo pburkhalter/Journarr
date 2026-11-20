@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { TorboxCreate } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import type { TorboxCreate } from '#lib/types.ts';
+	import { cn } from '#lib/utils.ts';
 
 	let { headroom }: { headroom: TorboxCreate } = $props();
 

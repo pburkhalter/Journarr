@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { ServiceStatus } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import type { ServiceStatus } from '#lib/types.ts';
+	import { cn } from '#lib/utils.ts';
 
 	let { status }: { status: ServiceStatus } = $props();
 

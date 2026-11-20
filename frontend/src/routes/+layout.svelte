@@ -1,9 +1,9 @@
 <script lang="ts">
 	import '../app.css';
 	import { page } from '$app/state';
-	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { live } from '$lib/live.svelte';
-	import { cn } from '$lib/utils';
+	import ConfirmDialog from '#lib/components/ConfirmDialog.svelte';
+	import { live } from '#lib/live.svelte.ts';
+	import { cn } from '#lib/utils.ts';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
@@ -12,7 +12,9 @@
 
 	// History is the Flow page with the "Done" filter, so both entries point at
 	// "/" and the status parameter decides which one is highlighted.
-	const nav: { href: string; label: string; active: (u: URL) => boolean }[] = [
+	// page.url is read-only in SvelteKit 3; the matchers only read it.
+	type NavURL = typeof page.url;
+	const nav: { href: string; label: string; active: (u: NavURL) => boolean }[] = [
 		{
 			href: '/',
 			label: 'Flow',
@@ -27,7 +29,7 @@
 		{ href: '/actions', label: 'Actions', active: (u) => u.pathname === '/actions' },
 		{ href: '/services', label: 'Services', active: (u) => u.pathname === '/services' }
 	];
-	const approvalsItem = { href: '/approvals', label: 'Approvals', active: (u: URL) => u.pathname === '/approvals' };
+	const approvalsItem = { href: '/approvals', label: 'Approvals', active: (u: NavURL) => u.pathname === '/approvals' };
 	// The Approvals entry appears only when removal requests are on (or one
 	// is still waiting), so a stack without MCP removals keeps its old nav.
 	const navItems = $derived(live.approvalsEnabled || live.pendingApprovals > 0 ? [...nav, approvalsItem] : nav);

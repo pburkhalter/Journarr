@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getRequests } from '$lib/api';
-	import PipelineCard from '$lib/components/PipelineCard.svelte';
-	import { live } from '$lib/live.svelte';
-	import type { RequestRollup } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import { getRequests } from '#lib/api.ts';
+	import PipelineCard from '#lib/components/PipelineCard.svelte';
+	import { live } from '#lib/live.svelte.ts';
+	import type { RequestRollup } from '#lib/types.ts';
+	import { cn } from '#lib/utils.ts';
 	import { untrack } from 'svelte';
 
 	// Filter and search live in the URL (?status=done&q=dune), so going back
@@ -72,7 +72,7 @@
 		if (status !== 'active') params.set('status', status);
 		if (q) params.set('q', q);
 		const qs = params.toString();
-		void goto(qs ? `/?${qs}` : '/', { replaceState: replace, keepFocus: true, noScroll: true });
+		void goto(qs ? `/?${qs}` : '/', { replace, reset: false });
 	}
 
 	let searchTimer: ReturnType<typeof setTimeout>;

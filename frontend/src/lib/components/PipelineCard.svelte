@@ -1,9 +1,9 @@
 <script lang="ts">
-	import StageStrip from '$lib/components/StageStrip.svelte';
-	import { clock } from '$lib/clock.svelte';
-	import { live } from '$lib/live.svelte';
-	import type { RequestRollup } from '$lib/types';
-	import { cn, relativeTime } from '$lib/utils';
+	import StageStrip from '#lib/components/StageStrip.svelte';
+	import { clock } from '#lib/clock.svelte.ts';
+	import { live } from '#lib/live.svelte.ts';
+	import type { RequestRollup } from '#lib/types.ts';
+	import { cn, relativeTime } from '#lib/utils.ts';
 
 	let { request }: { request: RequestRollup } = $props();
 

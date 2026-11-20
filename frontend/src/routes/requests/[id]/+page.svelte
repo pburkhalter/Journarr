@@ -11,16 +11,16 @@
 		isNotFound,
 		removeTitle,
 		retryItem
-	} from '$lib/api';
-	import { clock } from '$lib/clock.svelte';
-	import RemovalPlanView from '$lib/components/RemovalPlanView.svelte';
-	import StageBadge from '$lib/components/StageBadge.svelte';
-	import StageStrip from '$lib/components/StageStrip.svelte';
-	import StageTimeline from '$lib/components/StageTimeline.svelte';
-	import { confirm } from '$lib/confirm.svelte';
-	import { live } from '$lib/live.svelte';
-	import type { Action, ItemDetail, RawEvent, RemovalPlan, RequestDetail } from '$lib/types';
-	import { cn, formatBytesOrDash, formatTime, relativeTime } from '$lib/utils';
+	} from '#lib/api.ts';
+	import { clock } from '#lib/clock.svelte.ts';
+	import RemovalPlanView from '#lib/components/RemovalPlanView.svelte';
+	import StageBadge from '#lib/components/StageBadge.svelte';
+	import StageStrip from '#lib/components/StageStrip.svelte';
+	import StageTimeline from '#lib/components/StageTimeline.svelte';
+	import { confirm } from '#lib/confirm.svelte.ts';
+	import { live } from '#lib/live.svelte.ts';
+	import type { Action, ItemDetail, RawEvent, RemovalPlan, RequestDetail } from '#lib/types.ts';
+	import { cn, formatBytesOrDash, formatTime, relativeTime } from '#lib/utils.ts';
 	import { MediaQuery } from 'svelte/reactivity';
 
 	const id = $derived(Number(page.params.id));

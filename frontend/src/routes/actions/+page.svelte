@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { executeAction, getActions, getFlowSettings, putFlowSettings } from '$lib/api';
-	import { confirm } from '$lib/confirm.svelte';
-	import { confirmJellyfinScan } from '$lib/prompts';
-	import type { Action } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import { executeAction, getActions, getFlowSettings, putFlowSettings } from '#lib/api.ts';
+	import { confirm } from '#lib/confirm.svelte.ts';
+	import { confirmJellyfinScan } from '#lib/prompts.ts';
+	import type { Action } from '#lib/types.ts';
+	import { cn } from '#lib/utils.ts';
 
 	let actions = $state<Action[]>([]);
 	let loaded = $state(false);

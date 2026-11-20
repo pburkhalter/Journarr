@@ -1,11 +1,11 @@
 # Stage 1: frontend
-FROM node:22-alpine AS frontend
+FROM node:24-alpine AS frontend
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ .
 RUN npm run build
-# npm run build writes to ../backend/internal/web/dist (svelte.config.js),
+# npm run build writes to ../backend/internal/web/dist (vite.config.ts),
 # which inside this stage is /src/backend/internal/web/dist
 
 # Stage 2: backend

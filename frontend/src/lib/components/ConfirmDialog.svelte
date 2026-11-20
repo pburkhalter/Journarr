@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { confirm } from '$lib/confirm.svelte';
-	import { cn } from '$lib/utils';
+	import { confirm } from '#lib/confirm.svelte.ts';
+	import { cn } from '#lib/utils.ts';
 
 	// Native <dialog> with showModal(): the browser traps focus, makes the page
 	// behind inert, closes on Esc and puts focus back on the trigger afterwards.

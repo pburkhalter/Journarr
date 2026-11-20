@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { decideApproval, getApproval, getApprovals } from '$lib/api';
-	import { clock } from '$lib/clock.svelte';
-	import RemovalPlanView from '$lib/components/RemovalPlanView.svelte';
-	import { confirm } from '$lib/confirm.svelte';
-	import { live } from '$lib/live.svelte';
-	import type { Approval, ApprovalDetail, RemovalPlan } from '$lib/types';
-	import { cn, formatTime, relativeTime, timeUntil } from '$lib/utils';
+	import { decideApproval, getApproval, getApprovals } from '#lib/api.ts';
+	import { clock } from '#lib/clock.svelte.ts';
+	import RemovalPlanView from '#lib/components/RemovalPlanView.svelte';
+	import { confirm } from '#lib/confirm.svelte.ts';
+	import { live } from '#lib/live.svelte.ts';
+	import type { Approval, ApprovalDetail, RemovalPlan } from '#lib/types.ts';
+	import { cn, formatTime, relativeTime, timeUntil } from '#lib/utils.ts';
 
 	// Removal requests MCP clients filed. Approving deletes the title
 	// everywhere — the server accepts it only from an SSO session and only if

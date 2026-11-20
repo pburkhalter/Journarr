@@ -1,9 +1,9 @@
 <script lang="ts">
-	import HeadroomMeter from '$lib/components/HeadroomMeter.svelte';
-	import StatusDot from '$lib/components/StatusDot.svelte';
-	import { clock } from '$lib/clock.svelte';
-	import { parseDetail, type JellySession, type ServiceHealth } from '$lib/types';
-	import { cn, relativeTime, titleCase } from '$lib/utils';
+	import HeadroomMeter from '#lib/components/HeadroomMeter.svelte';
+	import StatusDot from '#lib/components/StatusDot.svelte';
+	import { clock } from '#lib/clock.svelte.ts';
+	import { parseDetail, type JellySession, type ServiceHealth } from '#lib/types.ts';
+	import { cn, relativeTime, titleCase } from '#lib/utils.ts';
 
 	// `kind` = registry kind (sonarr, arrarr, journarr, …); `streams` = live
 	// Jellyfin now-playing (Jellyfin tile only); `children` = health of

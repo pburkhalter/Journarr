@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { getDiskSpace, getSessions, jellyfinScan } from '$lib/api';
-	import { clock } from '$lib/clock.svelte';
-	import DiskSpaceCard from '$lib/components/DiskSpaceCard.svelte';
-	import ServiceCard from '$lib/components/ServiceCard.svelte';
-	import { live } from '$lib/live.svelte';
-	import { confirmJellyfinScan } from '$lib/prompts';
-	import type { DiskMount, JellySession, ServiceHealth } from '$lib/types';
-	import { cn } from '$lib/utils';
+	import { getDiskSpace, getSessions, jellyfinScan } from '#lib/api.ts';
+	import { clock } from '#lib/clock.svelte.ts';
+	import DiskSpaceCard from '#lib/components/DiskSpaceCard.svelte';
+	import ServiceCard from '#lib/components/ServiceCard.svelte';
+	import { live } from '#lib/live.svelte.ts';
+	import { confirmJellyfinScan } from '#lib/prompts.ts';
+	import type { DiskMount, JellySession, ServiceHealth } from '#lib/types.ts';
+	import { cn } from '#lib/utils.ts';
 
 	// The backend checks every service each 45 s (HEALTH_POLL_INTERVAL). A
 	// reading older than two passes means the checks or the live stream

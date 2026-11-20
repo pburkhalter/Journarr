@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { live } from '$lib/live.svelte';
-	import { cn } from '$lib/utils';
+	import { live } from '#lib/live.svelte.ts';
+	import { cn } from '#lib/utils.ts';
 
 	/**
 	 * Aggregated progress strip for a request: one segment per active

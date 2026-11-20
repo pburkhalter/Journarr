@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { RemovalPlan } from '$lib/types';
-	import { cn, formatBytes, titleCase } from '$lib/utils';
+	import type { RemovalPlan } from '#lib/types.ts';
+	import { cn, formatBytes, titleCase } from '#lib/utils.ts';
 
 	// What "Remove everywhere" would delete, from GET /api/requests/{id}/removal.
 	// Display only — the caller fetches the plan and asks for confirmation.

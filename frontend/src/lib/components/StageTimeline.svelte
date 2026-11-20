@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { live } from '$lib/live.svelte';
-	import type { Transition } from '$lib/types';
-	import { cn, formatTime } from '$lib/utils';
+	import { live } from '#lib/live.svelte.ts';
+	import type { Transition } from '#lib/types.ts';
+	import { cn, formatTime } from '#lib/utils.ts';
 
 	let {
 		transitions,

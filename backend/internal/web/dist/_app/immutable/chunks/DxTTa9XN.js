@@ -1,1 +1,0 @@
-import{A as e,B as t,H as n,V as r}from"./CqlhweYW.js";var i=new class{#e=n(t(Date.now()));#t;get now(){return!this.#t&&typeof window<`u`&&(this.#t=setInterval(()=>r(this.#e,Date.now(),!0),1e3)),e(this.#e)}};export{i as t};

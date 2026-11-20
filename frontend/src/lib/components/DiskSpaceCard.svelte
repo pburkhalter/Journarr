@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { DiskMount } from '$lib/types';
-	import { cn, formatBytes } from '$lib/utils';
+	import type { DiskMount } from '#lib/types.ts';
+	import { cn, formatBytes } from '#lib/utils.ts';
 
 	let { mounts }: { mounts: DiskMount[] } = $props();
 
