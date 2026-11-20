@@ -5,6 +5,9 @@
  * shadcn-svelte components can be dropped in later without re-theming.
  */
 :root {
+	/* Dark-only app: native controls (checkboxes, inputs, scrollbars) and
+	 * Safari's chrome follow the dark palette too. */
+	color-scheme: dark;
 	--background: oklch(0.141 0.005 285.823);
 	--foreground: oklch(0.985 0 0);
 	--card: oklch(0.21 0.006 285.885);
@@ -59,4 +62,28 @@
 
 * {
 	border-color: var(--border);
+}
+
+/* Comfortable tap targets on touch screens (Apple asks for 44pt), without
+ * blowing up the dense desktop layout. Apply to buttons and links. */
+@utility tap {
+	@media (pointer: coarse) {
+		min-height: 2.75rem;
+		min-width: 2.75rem;
+	}
+}
+
+/* A modal dialog freezes the page behind it, scroll included. */
+html:has(dialog[open]) {
+	overflow: hidden;
+}
+
+/* Status pings and pulses stop for people who asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
 }

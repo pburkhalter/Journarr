@@ -1,46 +1,75 @@
 <script lang="ts">
 	import { confirm } from '$lib/confirm.svelte';
 	import { cn } from '$lib/utils';
+
+	// Native <dialog> with showModal(): the browser traps focus, makes the page
+	// behind inert, closes on Esc and puts focus back on the trigger afterwards.
+	let dialog = $state<HTMLDialogElement>();
+	let cancelBtn = $state<HTMLButtonElement>();
+	let confirmBtn = $state<HTMLButtonElement>();
+
+	$effect(() => {
+		if (!dialog) return;
+		if (confirm.open && !dialog.open) {
+			dialog.showModal();
+			// Destructive prompts start on Cancel, so a stray Enter does nothing.
+			(confirm.danger ? cancelBtn : confirmBtn)?.focus();
+		} else if (!confirm.open && dialog.open) {
+			dialog.close();
+		}
+	});
+
+	// Esc or a click on the backdrop (the dialog element itself, outside the
+	// panel) counts as Cancel.
+	function onClose() {
+		if (confirm.open) confirm.resolve(false);
+	}
+	function onBackdrop(e: MouseEvent) {
+		if (e.target === dialog) confirm.resolve(false);
+	}
 </script>
 
-<svelte:window onkeydown={(e) => confirm.open && e.key === 'Escape' && confirm.resolve(false)} />
-
-{#if confirm.open}
-	<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-		<button
-			class="absolute inset-0 bg-black/60"
-			aria-label="Dismiss"
-			onclick={() => confirm.resolve(false)}
-		></button>
-		<div class="relative w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl" role="dialog" aria-modal="true">
-			<h2 class="text-sm font-semibold">{confirm.title}</h2>
-			<p class="mt-2 text-xs text-muted-foreground">{confirm.message}</p>
-			{#if confirm.details.length}
-				<ul class="mt-3 space-y-1 text-xs">
-					{#each confirm.details as d, i (i)}
-						<li class="flex gap-1.5"><span class="text-muted-foreground">•</span><span>{d}</span></li>
-					{/each}
-				</ul>
-			{/if}
-			<div class="mt-5 flex justify-end gap-2">
-				<button
-					onclick={() => confirm.resolve(false)}
-					class="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={() => confirm.resolve(true)}
-					class={cn(
-						'rounded-md px-3 py-1.5 text-xs font-medium',
-						confirm.danger
-							? 'bg-destructive text-white hover:opacity-90'
-							: 'bg-primary text-primary-foreground hover:opacity-90'
-					)}
-				>
-					{confirm.confirmLabel}
-				</button>
-			</div>
+<dialog
+	bind:this={dialog}
+	onclose={onClose}
+	onclick={onBackdrop}
+	aria-labelledby="confirm-title"
+	aria-describedby="confirm-message"
+	class="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/60"
+>
+	<div class="max-h-[80vh] overflow-y-auto p-5">
+		<h2 id="confirm-title" class="text-base font-semibold sm:text-sm">{confirm.title}</h2>
+		<p id="confirm-message" class="mt-2 text-sm text-muted-foreground sm:text-xs">{confirm.message}</p>
+		{#if confirm.body}
+			<div class="mt-3">{@render confirm.body()}</div>
+		{/if}
+		{#if confirm.details.length}
+			<ul class="mt-3 space-y-1 text-xs">
+				{#each confirm.details as d, i (i)}
+					<li class="flex gap-1.5"><span class="text-muted-foreground">•</span><span>{d}</span></li>
+				{/each}
+			</ul>
+		{/if}
+		<div class="mt-5 flex justify-end gap-2">
+			<button
+				bind:this={cancelBtn}
+				onclick={() => confirm.resolve(false)}
+				class="tap rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground sm:text-xs"
+			>
+				Cancel
+			</button>
+			<button
+				bind:this={confirmBtn}
+				onclick={() => confirm.resolve(true)}
+				class={cn(
+					'tap rounded-md px-3 py-1.5 text-sm font-medium sm:text-xs',
+					confirm.danger
+						? 'bg-destructive text-white hover:opacity-90'
+						: 'bg-primary text-primary-foreground hover:opacity-90'
+				)}
+			>
+				{confirm.confirmLabel}
+			</button>
 		</div>
 	</div>
-{/if}
+</dialog>
