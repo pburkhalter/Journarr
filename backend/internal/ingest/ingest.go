@@ -5,6 +5,7 @@
 package ingest
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -23,6 +24,9 @@ type Handler struct {
 	Log   *slog.Logger
 	Token string // empty = webhook ingestion disabled (503)
 	Wake  func() // nudges the projector
+	// Relay forwards another system's alert to the owner through Journarr's
+	// alert sender (Pushover). Nil = /webhook/truenas is not served.
+	Relay func(ctx context.Context, title, message string) error
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -31,6 +35,9 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/webhook/radarr", h.wrap(h.handleRadarr))
 	r.Post("/webhook/arrarr", h.wrap(h.handleArrarr))
 	r.Post("/webhook/tdarr", h.wrap(h.handleTdarr))
+	if h.Relay != nil {
+		r.Post("/webhook/truenas", h.wrap(h.handleTruenas))
+	}
 }
 
 func (h *Handler) wrap(fn func(body []byte) error) http.HandlerFunc {
