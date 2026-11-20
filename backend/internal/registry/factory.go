@@ -76,12 +76,14 @@ func buildInstance(s Spec, timeout time.Duration) (*Instance, error) {
 	}
 
 	switch s.Kind {
-	case KindSonarr:
-		inst.Client = clients.NewArr(s.ID, s.URL, "/api/v3", s.APIKey, timeout)
-	case KindRadarr:
-		inst.Client = clients.NewArr(s.ID, s.URL, "/api/v3", s.APIKey, timeout)
-	case KindProwlarr:
-		inst.Client = clients.NewArr(s.ID, s.URL, "/api/v1", s.APIKey, timeout)
+	case KindSonarr, KindRadarr, KindProwlarr:
+		apiBase := "/api/v3"
+		if s.Kind == KindProwlarr {
+			apiBase = "/api/v1"
+		}
+		a := clients.NewArr(s.ID, s.URL, apiBase, s.APIKey, timeout)
+		a.Kind = string(s.Kind)
+		inst.Client = a
 	case KindArrarr:
 		inst.Client = clients.NewArrarr(s.URL, s.APIKey, timeout)
 	case KindJellyfin:

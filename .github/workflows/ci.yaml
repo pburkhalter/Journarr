@@ -33,7 +33,8 @@ jobs:
           cache: false
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # Pinned: a new linter release must not turn CI red without a code change.
+          version: v2.15.0
           working-directory: backend
 
   vuln:

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 )
@@ -104,7 +105,7 @@ func (s *Store) FindActiveDownloadByClientID(ctx context.Context, clientID strin
 	d, err := scanDownload(s.db.QueryRowContext(ctx,
 		dlSelect+` WHERE client_download_id = ? AND state NOT IN ('imported','failed','canceled')
 		ORDER BY id DESC LIMIT 1`, NormalizeDownloadID(clientID)))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return d, err
@@ -113,7 +114,7 @@ func (s *Store) FindActiveDownloadByClientID(ctx context.Context, clientID strin
 func (s *Store) FindDownloadByClientID(ctx context.Context, clientID string) (*Download, error) {
 	d, err := scanDownload(s.db.QueryRowContext(ctx,
 		dlSelect+` WHERE client_download_id = ? ORDER BY id DESC LIMIT 1`, NormalizeDownloadID(clientID)))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return d, err
@@ -135,7 +136,7 @@ func (s *Store) SetDownloadArrarrNzo(ctx context.Context, id int64, nzoID string
 func (s *Store) FindDownloadByArrarrNzo(ctx context.Context, nzoID string) (*Download, error) {
 	d, err := scanDownload(s.db.QueryRowContext(ctx,
 		dlSelect+` WHERE arrarr_nzo_id = ? ORDER BY id DESC LIMIT 1`, nzoID))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return d, err

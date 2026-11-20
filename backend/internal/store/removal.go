@@ -56,6 +56,7 @@ func (s *Store) ArrIDsForRequests(ctx context.Context, reqIDs []int64) (series, 
 		return nil, nil, nil
 	}
 	in, args := inList(reqIDs)
+	//nolint:gosec // in is a "(?,?,…)" placeholder list from inList; values go in args
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT COALESCE(sonarr_series_id, 0), COALESCE(radarr_movie_id, 0)
 		FROM media_items WHERE request_id IN `+in, args...)

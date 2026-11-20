@@ -84,8 +84,22 @@ With `JOURNARR_API_TOKEN` set, scripts call the API with
 `curl -H "Authorization: Bearer $TOKEN" $JOURNARR_PUBLIC_URL/api/requests`.
 
 Register the client in your IdP with callback URL
-`$JOURNARR_PUBLIC_URL/auth/callback`. `/healthz` and (later) `/webhook/*`
-stay token-guarded outside the SSO gate.
+`$JOURNARR_PUBLIC_URL/auth/callback`. `/healthz` and `/webhook/*` stay
+outside the SSO gate (`/webhook/*` is guarded by `JOURNARR_WEBHOOK_TOKEN`).
+
+State-changing API calls (`POST`/`PUT`) from a browser session must send
+`Content-Type: application/json` and come from the same origin
+(`Sec-Fetch-Site`/`Origin`, with `JOURNARR_PUBLIC_URL` trusted behind a
+proxy); calls with a bearer token are exempt from the content-type rule.
+Every intervention lands in an audit with its actor (the SSO user's email,
+`api-token`, `flow` or `anonymous` in open mode): `GET /api/actions/log`.
+
+"Remove everywhere" is two steps: `GET /api/requests/{id}/removal` returns
+the plan with a `plan_hash`; `POST /api/actions/remove` with that hash
+deletes only if the plan is still the same, else it answers 409 with
+`"code": "plan_changed"` (409 `"watching"` while someone plays the title,
+unless `force`). The hash covers what gets deleted (Sonarr/Radarr entry and
+folder, Journarr requests, Seerr entries), not file counts or downloads.
 
 ## Alerts
 

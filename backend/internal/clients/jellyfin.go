@@ -115,7 +115,7 @@ func (c *Jellyfin) RefreshLibrary(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return &APIError{Status: resp.StatusCode}
+		return &APIError{Service: "jellyfin", Status: resp.StatusCode}
 	}
 	return nil
 }
@@ -137,11 +137,13 @@ func parseProviderID(ids map[string]string, key string) int64 {
 	return 0
 }
 
+// APIError is an HTTP error answer from an upstream service.
 type APIError struct {
-	Status int
+	Service string // jellyfin|seerr
+	Status  int
 }
 
-func (e *APIError) Error() string { return "jellyfin status " + itoa(e.Status) }
+func (e *APIError) Error() string { return e.Service + " status " + itoa(e.Status) }
 
 // headers authenticates with the Authorization header in Jellyfin's
 // MediaBrowser scheme, the form its API documents. Jellyfin 12 turns legacy

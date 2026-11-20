@@ -149,6 +149,20 @@ func (c *Seerr) MediaID(ctx context.Context, mediaType string, tmdbID int64) (in
 	return body.MediaInfo.ID, nil
 }
 
+// TvdbID resolves a series' TVDB id from its TMDB id (Sonarr is keyed by
+// TVDB, Seerr and its search by TMDB). 0 when TMDB knows no TVDB id.
+func (c *Seerr) TvdbID(ctx context.Context, tmdbID int64) (int64, error) {
+	var body struct {
+		ExternalIDs struct {
+			TvdbID int64 `json:"tvdbId"`
+		} `json:"externalIds"`
+	}
+	if _, err := getJSON(ctx, c.HTTP, c.BaseURL+"/api/v1/tv/"+itoa64(tmdbID), c.headers(), &body); err != nil {
+		return 0, err
+	}
+	return body.ExternalIDs.TvdbID, nil
+}
+
 // DeleteMedia removes Seerr's media entry with all its requests, so the title
 // shows as not requested again. Seerr answers 204 also for an unknown id.
 func (c *Seerr) DeleteMedia(ctx context.Context, mediaID int64) error {
@@ -170,7 +184,7 @@ func (c *Seerr) delete(ctx context.Context, url string) error {
 	defer resp.Body.Close()
 	// 404 = already gone; treat as success.
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
-		return &APIError{Status: resp.StatusCode}
+		return &APIError{Service: "seerr", Status: resp.StatusCode}
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -317,7 +318,7 @@ type rowScanner interface{ Scan(dest ...any) error }
 
 func (s *Store) scanRequest(row *sql.Row) (*Request, error) {
 	r, err := scanRequestRow(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return r, err

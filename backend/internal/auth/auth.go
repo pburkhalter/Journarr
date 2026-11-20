@@ -271,6 +271,24 @@ func (a *Auth) UserFrom(r *http.Request) (*User, bool) {
 	return u, true
 }
 
+// Actor names the caller for the actions audit: the user's email (else
+// subject), "api-token", or "anonymous" when SSO is off. An invalid session
+// never reaches here — RequireAPI rejects it first.
+func (a *Auth) Actor(r *http.Request) string {
+	if !a.Enabled() {
+		return "anonymous"
+	}
+	u, ok := a.UserFrom(r)
+	switch {
+	case !ok || u == nil:
+		return "unknown"
+	case u.Email != "":
+		return u.Email
+	default:
+		return u.Subject
+	}
+}
+
 // tokenOK reports whether the request carries the configured API token.
 func (a *Auth) tokenOK(r *http.Request) bool {
 	if a.cfg.APIToken == "" {

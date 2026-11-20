@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -248,7 +247,7 @@ type HistoryRecord struct {
 // id > sinceID can appear after one with id <= sinceID on the same page.
 func (c *Arr) HistorySince(ctx context.Context, sinceID int64, maxPages int) ([]HistoryRecord, bool, error) {
 	include := "&includeSeries=true&includeEpisode=true"
-	if c.Name == "radarr" {
+	if c.Type() == "radarr" {
 		include = "&includeMovie=true"
 	}
 	var collected []HistoryRecord
@@ -367,5 +366,3 @@ func (c *Arr) doJSON(ctx context.Context, method, url string, body any) error {
 	}
 	return nil
 }
-
-var _ = url.QueryEscape

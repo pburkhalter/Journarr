@@ -2,8 +2,12 @@ package actions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,16 +34,36 @@ import (
 // ErrBeingWatched means someone is playing the title right now.
 var ErrBeingWatched = errors.New("someone is watching this title")
 
+// ErrPlanChanged means the removal plan differs from the one that was
+// reviewed (other Sonarr/Radarr item, path, requests or Seerr entries), so
+// executing it would delete something nobody looked at.
+var ErrPlanChanged = errors.New("the removal plan changed since it was reviewed")
+
+// ErrTitleNotFound means no system knows the title.
+var ErrTitleNotFound = errors.New("title not found in Journarr, Seerr, Sonarr or Radarr")
+
 // removeSettle is how long to give Sonarr/Radarr's Jellyfin notification to
 // drop the title before checking. Tests set it to 0.
 var removeSettle = 5 * time.Second
 
+// Title identifies a movie or series across Journarr, Seerr and
+// Sonarr/Radarr. Either RequestID (a Journarr request; the ids are then taken
+// from it) or MediaType plus TmdbID (movie) / TmdbID or TvdbID (tv) is needed.
+type Title struct {
+	MediaType string `json:"media_type,omitempty"` // movie|tv
+	TmdbID    int64  `json:"tmdb_id,omitempty"`
+	TvdbID    int64  `json:"tvdb_id,omitempty"`
+	RequestID int64  `json:"request_id,omitempty"`
+}
+
 // RemovalPlan describes what a removal would delete (the confirmation
 // dialog) and carries the ids Remove needs.
 type RemovalPlan struct {
-	RequestID int64    `json:"request_id"`
+	RequestID int64    `json:"request_id,omitempty"`
 	Title     string   `json:"title"`
 	MediaType string   `json:"media_type"`
+	TmdbID    int64    `json:"tmdb_id,omitempty"`
+	TvdbID    int64    `json:"tvdb_id,omitempty"`
 	Requests  int      `json:"requests"` // Journarr requests for this title
 	Arr       string   `json:"arr,omitempty"`
 	ArrID     int64    `json:"arr_id,omitempty"`
@@ -55,12 +79,38 @@ type RemovalPlan struct {
 	RecycleDays int      `json:"recycle_days"`
 	Viewers     []string `json:"viewers"`
 	Warnings    []string `json:"warnings"`
-	requestIDs  []int64
-	seerrIDs    []int64
-	seerrMedia  int64
-	arrIDs      []int64 // every Sonarr series / Radarr movie id seen on the items
-	queueIDs    []int64
-	tmdbID      int64
+	// PlanHash fingerprints what the removal deletes (see hash). Remove
+	// refuses with ErrPlanChanged when the caller's hash differs.
+	PlanHash   string `json:"plan_hash"`
+	requestIDs []int64
+	seerrIDs   []int64
+	seerrMedia int64
+	arrIDs     []int64 // every Sonarr series / Radarr movie id seen on the items
+	queueIDs   []int64
+}
+
+// hash covers the identity of everything that gets deleted: the Sonarr or
+// Radarr entry and its folder, the Journarr requests and the Seerr entries.
+// File count, size and the running downloads are left out on purpose — they
+// move while a title downloads, and the delete takes the whole entry anyway.
+func (p *RemovalPlan) hash() string {
+	sorted := func(ids []int64) []int64 {
+		out := slices.Clone(ids)
+		slices.Sort(out)
+		return out
+	}
+	b, _ := json.Marshal(struct {
+		MediaType  string
+		Arr        string
+		ArrID      int64
+		ArrIDs     []int64
+		Path       string
+		RequestIDs []int64
+		SeerrIDs   []int64
+		SeerrMedia int64
+	}{p.MediaType, p.Arr, p.ArrID, sorted(p.arrIDs), p.Path, sorted(p.requestIDs), sorted(p.seerrIDs), p.seerrMedia})
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:16])
 }
 
 // RemovalStep is one line of the result.
@@ -70,27 +120,48 @@ type RemovalStep struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// PlanRemoval resolves the title of a request across all systems without
-// changing anything.
-func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPlan, error) {
-	req, err := a.Store.GetRequest(ctx, requestID)
-	if err != nil {
-		return nil, err
+// PlanRemoval resolves a title across all systems without changing anything.
+func (a *Actions) PlanRemoval(ctx context.Context, t Title) (*RemovalPlan, error) {
+	var req *store.Request
+	if t.RequestID != 0 {
+		var err error
+		if req, err = a.Store.GetRequest(ctx, t.RequestID); err != nil {
+			return nil, err
+		}
+		if req == nil {
+			return nil, fmt.Errorf("request %d not found", t.RequestID)
+		}
+		t.MediaType = req.MediaType
+		if t.TmdbID == 0 && req.TmdbID != nil {
+			t.TmdbID = *req.TmdbID
+		}
+		if t.TvdbID == 0 && req.TvdbID != nil {
+			t.TvdbID = *req.TvdbID
+		}
 	}
-	if req == nil {
-		return nil, fmt.Errorf("request %d not found", requestID)
+	if t.MediaType != "movie" && t.MediaType != "tv" {
+		return nil, fmt.Errorf("media_type must be movie or tv, got %q", t.MediaType)
 	}
-	p := &RemovalPlan{RequestID: requestID, Title: req.Title, MediaType: req.MediaType,
-		Downloads: []string{}, Viewers: []string{}, Warnings: []string{}}
-	if req.TmdbID != nil {
-		p.tmdbID = *req.TmdbID
+	if t.TmdbID == 0 && t.TvdbID == 0 {
+		return nil, fmt.Errorf("a tmdb_id or tvdb_id is needed")
+	}
+	if t.MediaType == "tv" && t.TvdbID == 0 && a.Seerr != nil {
+		if id, err := a.Seerr.TvdbID(ctx, t.TmdbID); err == nil {
+			t.TvdbID = id
+		}
 	}
 
-	reqs, err := a.Store.RequestsForTitle(ctx, req.MediaType, req.TmdbID, req.TvdbID)
+	p := &RemovalPlan{RequestID: t.RequestID, MediaType: t.MediaType, TmdbID: t.TmdbID, TvdbID: t.TvdbID,
+		Downloads: []string{}, Viewers: []string{}, Warnings: []string{}}
+	if req != nil {
+		p.Title = req.Title
+	}
+
+	reqs, err := a.Store.RequestsForTitle(ctx, t.MediaType, &t.TmdbID, &t.TvdbID)
 	if err != nil {
 		return nil, err
 	}
-	if len(reqs) == 0 {
+	if len(reqs) == 0 && req != nil {
 		reqs = []*store.Request{req}
 	}
 	for _, r := range reqs {
@@ -98,29 +169,33 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 		if r.SeerrRequestID != nil {
 			p.seerrIDs = append(p.seerrIDs, *r.SeerrRequestID)
 		}
-		if p.tmdbID == 0 && r.TmdbID != nil {
-			p.tmdbID = *r.TmdbID
+		if p.TmdbID == 0 && r.TmdbID != nil {
+			p.TmdbID = *r.TmdbID
+		}
+		if p.TvdbID == 0 && r.TvdbID != nil {
+			p.TvdbID = *r.TvdbID
+		}
+		if p.Title == "" {
+			p.Title = r.Title
 		}
 	}
+
 	p.Requests = len(reqs)
 	seriesIDs, movieIDs, err := a.Store.ArrIDsForRequests(ctx, p.requestIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	if req.MediaType == "tv" {
+	if p.MediaType == "tv" {
 		p.Arr = "sonarr"
 		p.arrIDs = seriesIDs
 		if a.Sonarr == nil {
 			p.Warnings = append(p.Warnings, "Sonarr is not configured")
 		} else {
 			var sr *clients.Series
-			for _, r := range reqs {
-				if r.TvdbID != nil && *r.TvdbID != 0 {
-					if sr, err = a.Sonarr.SeriesByTvdbID(ctx, *r.TvdbID); err != nil {
-						return nil, fmt.Errorf("sonarr: %w", err)
-					}
-					break
+			if p.TvdbID != 0 {
+				if sr, err = a.Sonarr.SeriesByTvdbID(ctx, p.TvdbID); err != nil {
+					return nil, fmt.Errorf("sonarr: %w", err)
 				}
 			}
 			for _, id := range seriesIDs {
@@ -132,6 +207,9 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 				}
 			}
 			if sr != nil {
+				if p.Title == "" {
+					p.Title = sr.Title
+				}
 				p.ArrID, p.Path = sr.ID, sr.Path
 				p.Files, p.SizeBytes, p.Seasons = sr.Statistics.EpisodeFileCount, sr.Statistics.SizeOnDisk, sr.Statistics.SeasonCount
 				p.arrIDs = appendUnique(p.arrIDs, sr.ID)
@@ -144,8 +222,8 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 			p.Warnings = append(p.Warnings, "Radarr is not configured")
 		} else {
 			var mv *clients.Movie
-			if p.tmdbID != 0 {
-				if mv, err = a.Radarr.MovieByTmdbID(ctx, p.tmdbID); err != nil {
+			if p.TmdbID != 0 {
+				if mv, err = a.Radarr.MovieByTmdbID(ctx, p.TmdbID); err != nil {
 					return nil, fmt.Errorf("radarr: %w", err)
 				}
 			}
@@ -158,6 +236,9 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 				}
 			}
 			if mv != nil {
+				if p.Title == "" {
+					p.Title = mv.Title
+				}
 				p.ArrID, p.Path, p.SizeBytes = mv.ID, mv.Path, mv.SizeOnDisk
 				if mv.HasFile {
 					p.Files = 1
@@ -167,7 +248,7 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 		}
 	}
 
-	if arr := a.arrFor(req.MediaType, ""); arr != nil && p.ArrID != 0 {
+	if arr := a.arrFor(p.MediaType, ""); arr != nil && p.ArrID != 0 {
 		if bin, days, err := arr.RecycleBin(ctx); err == nil {
 			p.RecycleBin, p.RecycleDays = bin, days
 		} else {
@@ -197,8 +278,8 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 		}
 	}
 
-	if a.Seerr != nil && p.tmdbID != 0 {
-		if id, err := a.Seerr.MediaID(ctx, req.MediaType, p.tmdbID); err == nil {
+	if a.Seerr != nil && p.TmdbID != 0 {
+		if id, err := a.Seerr.MediaID(ctx, p.MediaType, p.TmdbID); err == nil {
 			p.seerrMedia = id
 			p.InSeerr = id != 0
 		} else {
@@ -217,6 +298,15 @@ func (a *Actions) PlanRemoval(ctx context.Context, requestID int64) (*RemovalPla
 			p.Warnings = append(p.Warnings, "Jellyfin sessions unavailable: "+err.Error())
 		}
 	}
+	if p.Requests == 0 && p.ArrID == 0 && !p.InSeerr {
+		return nil, ErrTitleNotFound
+	}
+	if p.Title == "" && a.Seerr != nil && p.TmdbID != 0 {
+		if title, _, _, err := a.Seerr.MediaTitle(ctx, p.MediaType, p.TmdbID); err == nil {
+			p.Title = title
+		}
+	}
+	p.PlanHash = p.hash()
 	return p, nil
 }
 
@@ -232,10 +322,19 @@ func watching(s clients.JellySession, p *RemovalPlan) bool {
 	return s.ItemName != "" && strings.EqualFold(s.ItemName, p.Title)
 }
 
-// Remove deletes the request's title everywhere; see the package comment
-// above. force skips the "someone is watching" guard.
-func (a *Actions) Remove(ctx context.Context, requestID int64, force bool) ([]RemovalStep, error) {
-	auditID, _ := a.Store.InsertAction(ctx, "remove", "request", requestID)
+// Remove deletes a title everywhere; see the package comment above. When
+// planHash is not empty it must match the fresh plan's PlanHash, else nothing
+// is deleted (ErrPlanChanged). force skips the "someone is watching" guard.
+func (a *Actions) Remove(ctx context.Context, t Title, planHash string, force bool) ([]RemovalStep, error) {
+	targetType, targetID := "request", t.RequestID
+	if targetID == 0 {
+		targetType, targetID = t.MediaType, t.TmdbID
+		if targetID == 0 {
+			targetID = t.TvdbID
+		}
+	}
+	auditID := a.begin(ctx, "remove", targetType, targetID,
+		map[string]any{"title": t, "plan_hash": planHash, "force": force})
 	var steps []RemovalStep
 	add := func(step, status, detail string) {
 		steps = append(steps, RemovalStep{Step: step, Status: status, Detail: detail})
@@ -256,9 +355,12 @@ func (a *Actions) Remove(ctx context.Context, requestID int64, force bool) ([]Re
 		return steps, a.finishDetail(ctx, auditID, err, summary)
 	}
 
-	p, err := a.PlanRemoval(ctx, requestID)
+	p, err := a.PlanRemoval(ctx, t)
 	if err != nil {
 		return done(err)
+	}
+	if planHash != "" && planHash != p.PlanHash {
+		return done(ErrPlanChanged)
 	}
 	if len(p.Viewers) > 0 && !force {
 		return done(fmt.Errorf("%w: %s", ErrBeingWatched, strings.Join(p.Viewers, ", ")))
@@ -353,15 +455,15 @@ func (a *Actions) Remove(ctx context.Context, requestID int64, force bool) ([]Re
 	}
 
 	// 6. Journarr itself.
-	t := store.Tombstone{Title: p.Title, SeerrRequestIDs: p.seerrIDs}
+	tomb := store.Tombstone{Title: p.Title, SeerrRequestIDs: p.seerrIDs}
 	if p.Arr == "sonarr" {
-		t.SonarrSeriesIDs = p.arrIDs
+		tomb.SonarrSeriesIDs = p.arrIDs
 	} else {
-		t.RadarrMovieIDs = p.arrIDs
+		tomb.RadarrMovieIDs = p.arrIDs
 	}
 	wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := a.Store.PurgeRequests(wctx, p.requestIDs, t); err != nil {
+	if err := a.Store.PurgeRequests(wctx, p.requestIDs, tomb); err != nil {
 		add("journarr", "failed", err.Error())
 		return done(fmt.Errorf("purging Journarr failed"))
 	}

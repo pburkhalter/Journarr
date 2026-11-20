@@ -1,6 +1,16 @@
 version: "2"
 linters:
   default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - noctx
+  exclusions:
+    rules:
+      # Tests talk to httptest servers they own.
+      - path: _test\.go
+        linters: [gosec, noctx]
   settings:
     errcheck:
       exclude-functions:

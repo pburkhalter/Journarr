@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 )
@@ -109,7 +110,7 @@ func coalesceStage(s string) string {
 
 func (s *Store) GetMediaItem(ctx context.Context, id int64) (*MediaItem, error) {
 	m, err := scanItem(s.db.QueryRowContext(ctx, itemSelect+` WHERE id = ?`, id))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err
@@ -122,7 +123,7 @@ func (s *Store) FindItemsBySonarrEpisodeIDs(ctx context.Context, episodeIDs []in
 	for _, epID := range episodeIDs {
 		m, err := scanItem(s.db.QueryRowContext(ctx,
 			itemSelect+` WHERE sonarr_episode_id = ? ORDER BY id DESC LIMIT 1`, epID))
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
@@ -139,7 +140,7 @@ func (s *Store) FindItemByEpisodeNumbers(ctx context.Context, requestID int64, s
 	m, err := scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE request_id = ? AND media_type = 'episode'
 		AND season_number = ? AND episode_number = ? LIMIT 1`, requestID, season, episode))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err
@@ -148,7 +149,7 @@ func (s *Store) FindItemByEpisodeNumbers(ctx context.Context, requestID int64, s
 func (s *Store) FindMovieItemByRequest(ctx context.Context, requestID int64) (*MediaItem, error) {
 	m, err := scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE request_id = ? AND media_type = 'movie' LIMIT 1`, requestID))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err
@@ -158,7 +159,7 @@ func (s *Store) FindMovieItemByRequest(ctx context.Context, requestID int64) (*M
 func (s *Store) FindMovieItemByTmdb(ctx context.Context, tmdbID int64) (*MediaItem, error) {
 	m, err := scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE media_type = 'movie' AND tmdb_id = ? ORDER BY id DESC LIMIT 1`, tmdbID))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err
@@ -169,7 +170,7 @@ func (s *Store) FindEpisodeItemByTvdb(ctx context.Context, tvdbID, season, episo
 	m, err := scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE media_type = 'episode' AND tvdb_id = ? AND season_number = ? AND episode_number = ?
 		ORDER BY id DESC LIMIT 1`, tvdbID, season, episode))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err
@@ -188,7 +189,7 @@ func (s *Store) FindItemByImportedPath(ctx context.Context, path string) (*Media
 	if err == nil {
 		return m, nil
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	base := path
@@ -203,7 +204,7 @@ func (s *Store) FindItemByImportedPath(ctx context.Context, path string) (*Media
 	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(base)
 	m, err = scanItem(s.db.QueryRowContext(ctx,
 		itemSelect+` WHERE imported_path LIKE ? ESCAPE '\' ORDER BY id DESC LIMIT 1`, "%"+esc))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return m, err

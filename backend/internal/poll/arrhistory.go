@@ -18,7 +18,7 @@ import (
 type ArrHistoryPoller struct {
 	Store    *store.Store
 	Log      *slog.Logger
-	Arr      *clients.Arr // Name = sonarr|radarr
+	Arr      *clients.Arr // Type() = sonarr|radarr
 	Interval time.Duration
 	Wake     func()
 }
@@ -126,7 +126,7 @@ func (p *ArrHistoryPoller) normalize(rec clients.HistoryRecord) (string, any) {
 	case "grabbed":
 		size, _ := strconv.ParseInt(rec.Data["size"], 10, 64)
 		return "grab", pipeline.GrabOp{
-			Arr: p.Arr.Name, DownloadID: rec.DownloadID,
+			Arr: p.Arr.Type(), DownloadID: rec.DownloadID,
 			ReleaseTitle: rec.SourceTitle,
 			Indexer:      rec.Data["indexer"],
 			Size:         size,
@@ -135,7 +135,7 @@ func (p *ArrHistoryPoller) normalize(rec clients.HistoryRecord) (string, any) {
 		}
 	case "downloadFolderImported", "movieFolderImported":
 		op := pipeline.ImportOp{
-			Arr: p.Arr.Name, DownloadID: rec.DownloadID,
+			Arr: p.Arr.Type(), DownloadID: rec.DownloadID,
 			Series: series, Episodes: episodes, Movie: movie,
 		}
 		if path := rec.Data["importedPath"]; path != "" {
@@ -152,11 +152,9 @@ func (p *ArrHistoryPoller) normalize(rec clients.HistoryRecord) (string, any) {
 			msg = "download failed"
 		}
 		return "failure", pipeline.FailureOp{
-			Arr: p.Arr.Name, DownloadID: rec.DownloadID, Message: msg,
+			Arr: p.Arr.Type(), DownloadID: rec.DownloadID, Message: msg,
 			Series: series, Episodes: episodes, Movie: movie,
 		}
 	}
 	return "", nil
 }
-
-var _ = time.Second

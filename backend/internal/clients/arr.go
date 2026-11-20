@@ -11,7 +11,8 @@ import (
 // Arr covers the Servarr family: Sonarr/Radarr (api/v3) and Prowlarr (api/v1)
 // share the system/status + health surface, so one client serves all three.
 type Arr struct {
-	Name    string // sonarr|radarr|prowlarr — used in error context only
+	Name    string // instance id (log and error context, poll cursors)
+	Kind    string // sonarr|radarr|prowlarr; empty = same as Name (tests, legacy)
 	BaseURL string
 	APIBase string // "/api/v3" or "/api/v1"
 	APIKey  string
@@ -37,6 +38,16 @@ func NewArr(name, baseURL, apiBase, apiKey string, timeout time.Duration) *Arr {
 		APIKey:  apiKey,
 		HTTP:    newHTTP(timeout),
 	}
+}
+
+// Type is the arr flavour (sonarr|radarr|prowlarr). Code that branches on
+// Sonarr vs Radarr must use it, not Name: an instance id from
+// JOURNARR_INSTANCES can be anything ("sonarr-4k").
+func (c *Arr) Type() string {
+	if c.Kind != "" {
+		return c.Kind
+	}
+	return c.Name
 }
 
 func (c *Arr) headers() map[string]string {

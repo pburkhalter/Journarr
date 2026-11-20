@@ -37,6 +37,16 @@ func (a *Actions) arrFor(mediaType, arr string) *clients.Arr {
 	return a.Sonarr
 }
 
+// begin opens an audit row. A failed insert is logged and the action still
+// runs (id 0 makes the later FinishAction a no-op).
+func (a *Actions) begin(ctx context.Context, kind, targetType string, targetID int64, params any) int64 {
+	id, err := a.Store.InsertAction(ctx, kind, targetType, targetID, params)
+	if err != nil {
+		a.Log.Warn("audit: insert action", "kind", kind, "target", targetID, "err", err)
+	}
+	return id
+}
+
 func (a *Actions) finish(ctx context.Context, id int64, err error) error {
 	return a.finishDetail(ctx, id, err, "")
 }
@@ -61,7 +71,7 @@ func (a *Actions) finishDetail(_ context.Context, id int64, err error, okDetail 
 
 // JellyfinScan triggers a full library refresh.
 func (a *Actions) JellyfinScan(ctx context.Context) error {
-	id, _ := a.Store.InsertAction(ctx, "jellyfin_scan", "", 0)
+	id := a.begin(ctx, "jellyfin_scan", "", 0, nil)
 	if a.Jelly == nil {
 		return a.finish(ctx, id, fmt.Errorf("jellyfin not configured"))
 	}
@@ -70,7 +80,7 @@ func (a *Actions) JellyfinScan(ctx context.Context) error {
 
 // TdarrRescan re-scans every Tdarr library for new/changed files.
 func (a *Actions) TdarrRescan(ctx context.Context) error {
-	id, _ := a.Store.InsertAction(ctx, "transcode_scan", "", 0)
+	id := a.begin(ctx, "transcode_scan", "", 0, nil)
 	t := a.Reg.Tdarr()
 	if t == nil {
 		return a.finish(ctx, id, fmt.Errorf("tdarr not configured"))
@@ -81,7 +91,7 @@ func (a *Actions) TdarrRescan(ctx context.Context) error {
 // TdarrWorkers sets Tdarr's transcode worker limit on every node — 0 pauses
 // transcoding, ≥1 resumes it.
 func (a *Actions) TdarrWorkers(ctx context.Context, gpu int) error {
-	id, _ := a.Store.InsertAction(ctx, "transcode_workers", "", 0)
+	id := a.begin(ctx, "transcode_workers", "", 0, map[string]any{"gpu": gpu})
 	t := a.Reg.Tdarr()
 	if t == nil {
 		return a.finish(ctx, id, fmt.Errorf("tdarr not configured"))
@@ -94,7 +104,7 @@ func (a *Actions) TdarrWorkers(ctx context.Context, gpu int) error {
 // during a notifier outage). The flow controller sends only the items that
 // have no 'notified' transition yet, so this never repeats a message.
 func (a *Actions) ResendNotify(ctx context.Context, requestID int64) error {
-	id, _ := a.Store.InsertAction(ctx, "resend_notify", "request", requestID)
+	id := a.begin(ctx, "resend_notify", "request", requestID, nil)
 	req, err := a.Store.GetRequest(ctx, requestID)
 	if err != nil || req == nil {
 		return a.finish(ctx, id, fmt.Errorf("request %d not found", requestID))
@@ -142,7 +152,7 @@ func (a *Actions) hasUnannounced(ctx context.Context, requestID int64) bool {
 // download — otherwise they would be orphaned (queue removed + blocklisted but
 // never re-grabbed). Each affected item starts a fresh cycle.
 func (a *Actions) Retry(ctx context.Context, mediaItemID int64) error {
-	id, _ := a.Store.InsertAction(ctx, "retry", "media_item", mediaItemID)
+	id := a.begin(ctx, "retry", "media_item", mediaItemID, nil)
 	item, err := a.Store.GetMediaItem(ctx, mediaItemID)
 	if err != nil || item == nil {
 		return a.finish(ctx, id, fmt.Errorf("media item %d not found", mediaItemID))
@@ -185,10 +195,10 @@ func (a *Actions) Retry(ctx context.Context, mediaItemID int64) error {
 	var episodeIDs, movieIDs []int64
 	for _, it := range affected {
 		if it.MediaType == "movie" {
-			// radarr_movie_id wird erst beim ersten Grab gesetzt. Ein Film, der
-			// nie gegriffen wurde, hat also keine — ausgerechnet der Fall, fuer
-			// den es Retry gibt. Deshalb hier aus der tmdb_id nachschlagen und
-			// festschreiben, statt mit "no arr id" abzubrechen.
+			// radarr_movie_id is only set on the first grab, so a movie that was
+			// never grabbed has none — exactly the case Retry exists for. Look
+			// it up from the tmdb_id and persist it instead of failing with
+			// "no arr id".
 			if it.RadarrMovieID == nil && it.TmdbID != nil && a.Radarr != nil {
 				if mv, err := a.Radarr.MovieByTmdbID(ctx, *it.TmdbID); err == nil && mv != nil {
 					if e := a.Store.SetItemRadarrMovieID(ctx, it.ID, mv.ID); e != nil {
@@ -233,7 +243,7 @@ func (a *Actions) Retry(ctx context.Context, mediaItemID int64) error {
 // UNMONITOR the episodes/movies in the arr so it stops re-downloading, remove
 // the Seerr request, mark canceled and clear any stuck flags.
 func (a *Actions) Cancel(ctx context.Context, requestID int64) error {
-	id, _ := a.Store.InsertAction(ctx, "cancel", "request", requestID)
+	id := a.begin(ctx, "cancel", "request", requestID, nil)
 	req, err := a.Store.GetRequest(ctx, requestID)
 	if err != nil || req == nil {
 		return a.finish(ctx, id, fmt.Errorf("request %d not found", requestID))

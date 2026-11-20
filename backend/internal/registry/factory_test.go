@@ -3,6 +3,8 @@ package registry
 import (
 	"testing"
 	"time"
+
+	"github.com/pburkhalter/journarr/internal/clients"
 )
 
 // legacyLikeSpecs mirrors what config.legacySpecs() produces from the flat env
@@ -149,10 +151,35 @@ func TestSecondInstanceOfKind(t *testing.T) {
 	}
 }
 
-// Der Aggregator kommt ueber eine Runtime-Typzusicherung an die Instanzen. Die
-// ist der einzige Teil der Verdrahtung, den der Compiler nicht abdeckt: eine
-// Instanz mit CapDiskSpace, deren Client das Interface nicht erfuellt, wird
-// stillschweigend uebersprungen und die Karte bliebe leer.
+// An instance id is free text; Sonarr vs Radarr decisions (history include
+// flags, op.Arr, the downloads CHECK) must come from the kind.
+func TestArrTypeComesFromKindNotID(t *testing.T) {
+	reg, err := Build([]Spec{
+		{ID: "tv-main", Kind: KindSonarr, URL: "http://s1"},
+		{ID: "films", Kind: KindRadarr, URL: "http://r1"},
+		{ID: "indexers", Kind: KindProwlarr, URL: "http://p1"},
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for id, want := range map[string]string{"tv-main": "sonarr", "films": "radarr", "indexers": "prowlarr"} {
+		a, ok := reg.ByID(id).Client.(*clients.Arr)
+		if !ok {
+			t.Fatalf("%s: client is %T, want *clients.Arr", id, reg.ByID(id).Client)
+		}
+		if a.Type() != want || a.Name != id {
+			t.Errorf("%s: Type()=%q Name=%q, want %q/%q", id, a.Type(), a.Name, want, id)
+		}
+	}
+	if got := reg.ByID("indexers").Client.(*clients.Arr).APIBase; got != "/api/v1" {
+		t.Errorf("prowlarr APIBase = %q, want /api/v1", got)
+	}
+}
+
+// The aggregator reaches the instances through a runtime type assertion, the
+// only part of the wiring the compiler does not check: an instance with
+// CapDiskSpace whose client does not implement the interface would be skipped
+// silently and the card would stay empty.
 func TestDiskSpaceCapableInstancesImplementReporter(t *testing.T) {
 	reg, err := Build([]Spec{
 		{ID: "sonarr", Kind: KindSonarr, URL: "http://sonarr:8989", APIKey: "x"},

@@ -122,7 +122,7 @@ func (a *Actions) Execute(ctx context.Context, kind string, params map[string]an
 
 // SeasonSearch triggers Sonarr's SeasonSearch for the request's series + season.
 func (a *Actions) SeasonSearch(ctx context.Context, requestID, season int64) error {
-	id, _ := a.Store.InsertAction(ctx, "season_search", "request", requestID)
+	id := a.begin(ctx, "season_search", "request", requestID, map[string]any{"season": season})
 	if a.Sonarr == nil {
 		return a.finish(ctx, id, fmt.Errorf("sonarr not configured"))
 	}

@@ -67,7 +67,7 @@ func (f *fakeStack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.record("DELETE " + r.URL.Path + "?" + r.URL.RawQuery)
 		f.deleted = true
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/tv/1399":
-		_, _ = io.WriteString(w, `{"name":"Show","mediaInfo":{"id":314}}`)
+		_, _ = io.WriteString(w, `{"name":"Show","externalIds":{"tvdbId":555},"mediaInfo":{"id":314}}`)
 	case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/media/314":
 		f.record("DELETE " + r.URL.Path)
 		w.WriteHeader(http.StatusNoContent)
@@ -123,7 +123,7 @@ func TestRemoveDeletesTitleEverywhere(t *testing.T) {
 	a, st, f, reqID := setupRemoval(t)
 	ctx := context.Background()
 
-	plan, err := a.PlanRemoval(ctx, reqID)
+	plan, err := a.PlanRemoval(ctx, Title{RequestID: reqID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRemoveDeletesTitleEverywhere(t *testing.T) {
 		t.Fatalf("plan = %+v", plan)
 	}
 
-	if _, err := a.Remove(ctx, reqID, false); err != nil {
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, "", false); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -157,13 +157,13 @@ func TestRemoveRefusesWhileSomeoneWatches(t *testing.T) {
 	f.watching = true
 	ctx := context.Background()
 
-	if _, err := a.Remove(ctx, reqID, false); !errors.Is(err, ErrBeingWatched) {
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, "", false); !errors.Is(err, ErrBeingWatched) {
 		t.Fatalf("err = %v, want ErrBeingWatched", err)
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("changed something while refusing: %v", f.calls)
 	}
-	if _, err := a.Remove(ctx, reqID, true); err != nil {
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, "", true); err != nil {
 		t.Fatalf("forced remove: %v", err)
 	}
 	if r, _ := st.GetRequest(ctx, reqID); r != nil {
@@ -178,7 +178,7 @@ func TestRemoveStopsWhenArrDeleteFails(t *testing.T) {
 	f.failArr = true
 	ctx := context.Background()
 
-	steps, err := a.Remove(ctx, reqID, false)
+	steps, err := a.Remove(ctx, Title{RequestID: reqID}, "", false)
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -196,7 +196,7 @@ func TestRemoveStopsWhenArrDeleteFails(t *testing.T) {
 
 	// retry after Sonarr recovers finishes the job
 	f.failArr = false
-	if _, err := a.Remove(ctx, reqID, false); err != nil {
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if r, _ := st.GetRequest(ctx, reqID); r != nil {
@@ -209,7 +209,7 @@ func TestRemoveStopsWhenArrDeleteFails(t *testing.T) {
 func TestRemoveScansJellyfinWhenTitleLingers(t *testing.T) {
 	a, _, f, reqID := setupRemoval(t)
 	f.jellyLeft = true
-	steps, err := a.Remove(context.Background(), reqID, false)
+	steps, err := a.Remove(context.Background(), Title{RequestID: reqID}, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,5 +219,77 @@ func TestRemoveScansJellyfinWhenTitleLingers(t *testing.T) {
 	b, _ := json.Marshal(steps)
 	if !strings.Contains(string(b), "library scan started") {
 		t.Fatalf("steps = %s", b)
+	}
+}
+
+// The hash binds the reviewed plan to the execution: a plan that grew (here a
+// second Journarr request for the title) is refused untouched.
+func TestRemoveRefusesChangedPlan(t *testing.T) {
+	a, st, f, reqID := setupRemoval(t)
+	ctx := context.Background()
+	plan, err := a.PlanRemoval(ctx, Title{RequestID: reqID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.PlanHash) != 32 {
+		t.Fatalf("plan hash = %q", plan.PlanHash)
+	}
+	again, _ := a.PlanRemoval(ctx, Title{RequestID: reqID})
+	if again.PlanHash != plan.PlanHash {
+		t.Fatal("same state, different hash")
+	}
+
+	seerrID, tmdb := int64(78), int64(1399)
+	if _, err := st.UpsertRequest(ctx, store.Request{SeerrRequestID: &seerrID, MediaType: "tv",
+		TmdbID: &tmdb, Title: "Show"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, plan.PlanHash, false); !errors.Is(err, ErrPlanChanged) {
+		t.Fatalf("err = %v, want ErrPlanChanged", err)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("changed something on a changed plan: %v", f.calls)
+	}
+	fresh, _ := a.PlanRemoval(ctx, Title{RequestID: reqID})
+	if _, err := a.Remove(ctx, Title{RequestID: reqID}, fresh.PlanHash, false); err != nil {
+		t.Fatalf("remove with the fresh hash: %v", err)
+	}
+}
+
+// A library title nobody requested through Seerr/Journarr is planned and
+// removed by its ids; a series known only by TMDB gets its TVDB id from Seerr.
+func TestRemoveTitleWithoutRequest(t *testing.T) {
+	a, st, f, reqID := setupRemoval(t)
+	ctx := context.Background()
+	if err := st.PurgeRequests(ctx, []int64{reqID}, store.Tombstone{}); err != nil {
+		t.Fatal(err)
+	}
+	title := Title{MediaType: "tv", TmdbID: 1399}
+	plan, err := a.PlanRemoval(ctx, title)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Requests != 0 || plan.ArrID != 9 || plan.TvdbID != 555 || plan.Title != "Show" || !plan.InSeerr {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if _, err := a.Remove(ctx, title, plan.PlanHash, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.calls, "\n"), "DELETE /api/v3/series/9") {
+		t.Fatalf("series not deleted: %v", f.calls)
+	}
+	if !st.IsArrRemoved(ctx, "sonarr", 9) {
+		t.Fatal("tombstone missing")
+	}
+}
+
+func TestPlanRemovalUnknownTitle(t *testing.T) {
+	a, _, _, _ := setupRemoval(t)
+	_, err := a.PlanRemoval(context.Background(), Title{MediaType: "movie", TmdbID: 42})
+	if !errors.Is(err, ErrTitleNotFound) {
+		t.Fatalf("err = %v, want ErrTitleNotFound", err)
+	}
+	if _, err := a.PlanRemoval(context.Background(), Title{MediaType: "book", TmdbID: 1}); err == nil {
+		t.Fatal("want an error for an unknown media type")
 	}
 }

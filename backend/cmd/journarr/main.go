@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/pburkhalter/journarr/internal/actions"
 	"github.com/pburkhalter/journarr/internal/alert"
 	"github.com/pburkhalter/journarr/internal/api"
+	"github.com/pburkhalter/journarr/internal/audit"
 	"github.com/pburkhalter/journarr/internal/auth"
 	"github.com/pburkhalter/journarr/internal/config"
 	"github.com/pburkhalter/journarr/internal/flow"
@@ -60,6 +62,17 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// bg tracks every long-running goroutine and detached action, so shutdown
+	// can wait for them before the deferred store close.
+	var bg sync.WaitGroup
+	spawn := func(f func()) {
+		bg.Add(1)
+		go func() {
+			defer bg.Done()
+			f()
+		}()
+	}
 
 	st, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
@@ -141,7 +154,7 @@ func run() error {
 				"degraded_after", cfg.AlertDegradedAfter.String(),
 				"skip_degraded", strings.Join(cfg.AlertSkipDegraded, ","))
 		}
-		go hp.Run(ctx)
+		spawn(func() { hp.Run(ctx) })
 		log.Info("health poller started", "services", len(checks), "interval", cfg.HealthInterval.String())
 	}
 
@@ -164,58 +177,72 @@ func run() error {
 	}
 
 	if seerr != nil {
-		go (&poll.SeerrRequestPoller{
-			Store: st, Log: log, Seerr: seerr,
-			Interval: cfg.SeerrPollInterval, Wake: projector.Wake,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.SeerrRequestPoller{
+				Store: st, Log: log, Seerr: seerr,
+				Interval: cfg.SeerrPollInterval, Wake: projector.Wake,
+			}).Run(ctx)
+		})
 	}
 	mediaArrs := reg.MediaArrs()
 	for _, arr := range mediaArrs {
-		go (&poll.ArrHistoryPoller{
-			Store: st, Log: log, Arr: arr,
-			Interval: cfg.HistoryPollInterval, Wake: projector.Wake,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.ArrHistoryPoller{
+				Store: st, Log: log, Arr: arr,
+				Interval: cfg.HistoryPollInterval, Wake: projector.Wake,
+			}).Run(ctx)
+		})
 	}
 	if len(mediaArrs) > 0 {
-		go (&poll.ArrQueuePoller{
-			Store: st, Log: log, Arrs: mediaArrs,
-			Interval: cfg.QueuePollInterval, Publish: broker.Publish,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.ArrQueuePoller{
+				Store: st, Log: log, Arrs: mediaArrs,
+				Interval: cfg.QueuePollInterval, Publish: broker.Publish,
+			}).Run(ctx)
+		})
 	}
 	if jelly != nil {
-		go (&poll.JellyfinPoller{
-			Store: st, Log: log, Jelly: jelly,
-			Interval: cfg.JellyfinPollInterval, Wake: projector.Wake,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.JellyfinPoller{
+				Store: st, Log: log, Jelly: jelly,
+				Interval: cfg.JellyfinPollInterval, Wake: projector.Wake,
+			}).Run(ctx)
+		})
 	}
 	// Presence reconciler: advance already-on-disk (arr hasFile) items that
 	// pre-date Journarr or aged out of the Jellyfin recent window.
 	if sonarr != nil || radarr != nil {
-		go (&poll.PresencePoller{
-			Store: st, Log: log, Sonarr: sonarr, Radarr: radarr,
-			Interval: cfg.PresencePollInterval, Wake: projector.Wake,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.PresencePoller{
+				Store: st, Log: log, Sonarr: sonarr, Radarr: radarr,
+				Interval: cfg.PresencePollInterval, Wake: projector.Wake,
+			}).Run(ctx)
+		})
 	}
 	// Release watcher: flag requested/approved movies that aren't out yet as
 	// "waiting for release" (with Radarr's expected date) so they don't read
 	// as stalled.
 	if radarr != nil {
-		go (&poll.ReleasePoller{
-			Store: st, Log: log, Radarr: radarr,
-			Interval: time.Hour, Publish: broker.Publish,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.ReleasePoller{
+				Store: st, Log: log, Radarr: radarr,
+				Interval: time.Hour, Publish: broker.Publish,
+			}).Run(ctx)
+		})
 	}
 	// TV analog: flag series whose next episode/season hasn't aired yet (and
 	// which aren't actively downloading) as "waiting for release".
 	if sonarr != nil {
-		go (&poll.TVWaitingPoller{
-			Store: st, Log: log, Sonarr: sonarr,
-			Interval: time.Hour, Publish: broker.Publish,
-		}).Run(ctx)
+		spawn(func() {
+			(&poll.TVWaitingPoller{
+				Store: st, Log: log, Sonarr: sonarr,
+				Interval: time.Hour, Publish: broker.Publish,
+			}).Run(ctx)
+		})
 	}
 
 	// Daily reaper: events, and tombstones of removed titles.
-	go func() {
+	spawn(func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()
 		for {
@@ -231,7 +258,7 @@ func run() error {
 				}
 			}
 		}
-	}()
+	})
 
 	authn := auth.New(auth.Config{
 		IssuerURL:     cfg.OIDCIssuerURL,
@@ -265,7 +292,7 @@ func run() error {
 	flowCtrl.Wake = projector.Wake
 	// Notify-on-complete needs notifyarr + its /notify/send token; without both,
 	// the setting is inert (enqueued notify tasks fail-and-exhaust harmlessly).
-	if notifyarr := reg.Notifyarr(); notifyarr != nil && cfg.NotifyarrAPIKey != "" {
+	if notifyarr := reg.Notifyarr(); notifyarr != nil && notifyarr.APIKey != "" {
 		flowCtrl.Notifier = notifyarr
 		if insts := reg.ByKind(registry.KindNotifyarr); len(insts) > 0 {
 			flowCtrl.NotifierHealthID = insts[0].ID
@@ -275,8 +302,9 @@ func run() error {
 		log.Warn("flow: initial settings load failed", "err", err)
 	}
 	projector.OnStage = flowCtrl.OnStageApplied
-	go projector.Run(ctx)
-	go flowCtrl.Run(ctx)
+	spawn(func() { projector.Run(ctx) })
+	// The control-plane acts on its own; its audit rows say so.
+	spawn(func() { flowCtrl.Run(audit.WithActor(ctx, "flow")) })
 
 	// GitHub update checker for the self-hosted custom stack. Compares the
 	// running version (from each service's health surface) against the repo's
@@ -294,12 +322,12 @@ func run() error {
 	var updateChecker *updates.Checker
 	if len(updateRepos) > 0 {
 		updateChecker = updates.NewChecker(st, log, cfg.UpdateCheckInterval, updateRepos)
-		go updateChecker.Run(ctx)
+		spawn(func() { updateChecker.Run(ctx) })
 	}
 
 	// Stuck sweeper: flag active items that stopped progressing. First run
 	// delayed so the presence reconciler clears already-present items first.
-	go func() {
+	spawn(func() {
 		thresholds := map[string]int{
 			"approved": 14400, "grabbed": 7200, "submitted": 3600,
 			"cloud_downloading": 21600, "pulling": 3600, "downloaded": 1800, "imported": 1800,
@@ -323,7 +351,7 @@ func run() error {
 			case <-t.C:
 			}
 		}
-	}()
+	})
 
 	router := api.NewRouter(api.Deps{
 		Store:    st,
@@ -338,11 +366,15 @@ func run() error {
 		Log:      log,
 		Version:  versionStr,
 		Dist:     web.Dist(),
+
+		PublicURL: cfg.PublicURL,
+		Tasks:     &bg,
 	})
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	errCh := make(chan error, 1)
@@ -359,9 +391,32 @@ func run() error {
 	}
 	log.Info("shutting down")
 	broker.Shutdown() // release SSE handlers so Shutdown() can drain
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Docker gives 10 s between SIGTERM and SIGKILL: up to 5 s for open
+	// requests, then up to 4 s for detached actions and the background loops
+	// (they all stop on ctx), so the deferred store close does not cut a
+	// removal in half.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	if !waitTimeout(&bg, 4*time.Second) {
+		log.Warn("shutdown: background work still running, closing the store anyway")
+	}
+	return err
+}
+
+// waitTimeout waits for wg and reports whether it finished within d.
+func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
 }
 
 // healthcheck probes the local /healthz — used as the Docker HEALTHCHECK
@@ -377,7 +432,7 @@ func healthcheck() int {
 		return 1
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	resp, err := client.Get("http://127.0.0.1:" + port + "/healthz") //nolint:gosec,noctx // loopback probe of our own port, process exits right after
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1

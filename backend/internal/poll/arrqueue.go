@@ -86,5 +86,3 @@ func (p *ArrQueuePoller) pass(ctx context.Context) {
 		}
 	}
 }
-
-var _ = time.Second
