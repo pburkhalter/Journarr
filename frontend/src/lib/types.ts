@@ -87,6 +87,7 @@ export interface Action {
 /** What one item turned out to be in a re-check of the open requests. */
 export type RecheckOutcome =
 	| 'error'
+	| 'no_file'
 	| 'not_in_arr'
 	| 'reconciled'
 	| 'reset'
@@ -107,6 +108,8 @@ export interface RecheckRequest {
 /** Result of "Re-check open requests"; the counts are items. */
 export interface RecheckReport {
 	open: number;
+	/** Shown as available without an import, and Sonarr/Radarr have no file: taken back. */
+	no_file: number;
 	missing: number;
 	reset: number;
 	reconciled: number;

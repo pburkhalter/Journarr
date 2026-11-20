@@ -33,6 +33,15 @@ type JellyItem struct {
 	IndexNumber       *int64            `json:"IndexNumber"`       // episode
 	IndexNumberEnd    *int64            `json:"IndexNumberEnd"`    // last episode of a multi-ep file
 	DateCreated       string            `json:"DateCreated"`
+	// LocationType is "Virtual" for the placeholders Jellyfin creates for
+	// missing and unaired episodes (no file, no Path), else "FileSystem".
+	LocationType string `json:"LocationType"`
+}
+
+// Virtual reports a placeholder without a file: Jellyfin lists every episode
+// the series metadata knows, including the ones that are not on disk.
+func (it JellyItem) Virtual() bool {
+	return strings.EqualFold(it.LocationType, "Virtual")
 }
 
 // itemsBase is the collection endpoint: user-scoped when a user id is set,
@@ -51,9 +60,14 @@ func (c *Jellyfin) RecentlyAdded(ctx context.Context, limit int) ([]JellyItem, e
 
 // ItemsByDateCreated pages Movies and Episodes newest-first, so a caller can
 // walk back to a cursor instead of hoping the newest N cover everything.
+//
+// IsMissing=false leaves out the virtual episodes: when Jellyfin refreshes a
+// series it adds a placeholder with a fresh DateCreated for every episode it
+// does not have on disk. Taken for available, 76 missing episodes of one
+// series were announced on WhatsApp (2026-11-20).
 func (c *Jellyfin) ItemsByDateCreated(ctx context.Context, startIndex, limit int) ([]JellyItem, error) {
 	url := c.itemsBase() + "?SortBy=DateCreated&SortOrder=Descending&Recursive=true" +
-		"&IncludeItemTypes=Movie,Episode&Fields=ProviderIds,Path,DateCreated" +
+		"&IncludeItemTypes=Movie,Episode&IsMissing=false&Fields=ProviderIds,Path,DateCreated" +
 		"&StartIndex=" + itoa(startIndex) + "&Limit=" + itoa(limit)
 	var out struct {
 		Items []JellyItem `json:"Items"`

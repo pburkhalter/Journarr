@@ -27,10 +27,11 @@ const seasonSearchFrom = 4
 // the same way.
 const maxRecheckErrors = 10
 
-// Item outcomes of a re-check. An item can have two: "reset" and what its new
-// attempt then is.
+// Item outcomes of a re-check. An item can have several: "no_file" and/or
+// "reset", then what its attempt really is.
 const (
 	outError       = "error"       // Sonarr/Radarr or the store could not answer
+	outNoFile      = "no_file"     // shown in the library without an import or a file: taken back
 	outNotInArr    = "not_in_arr"  // Sonarr/Radarr do not know the title or episode
 	outReconciled  = "reconciled"  // the file was already there: moved to imported
 	outReset       = "reset"       // every download of the attempt failed: new attempt
@@ -43,14 +44,18 @@ const (
 
 // outcomeRank orders the outcomes by how much they tell about a request; the
 // first one present becomes the request's outcome.
-var outcomeRank = []string{outError, outNotInArr, outReconciled, outReset, outMissing,
+var outcomeRank = []string{outError, outNoFile, outNotInArr, outReconciled, outReset, outMissing,
 	outUnmonitored, outDownloading, outWaiting, outDone}
 
 // RecheckReport is what a re-check of the open requests found and did. The
-// counts are items (movies or episodes); Open counts requests.
+// counts are items (movies or episodes); Open counts the requests checked.
 type RecheckReport struct {
-	Open        int `json:"open"`
-	Missing     int `json:"missing"`
+	Open    int `json:"open"`
+	Missing int `json:"missing"`
+	// NoFile: shown as imported or later without an import in the current
+	// attempt (Jellyfin, Seerr), and Sonarr/Radarr have no file. Taken back to
+	// the stage the attempt really reached.
+	NoFile      int `json:"no_file"`
 	Reset       int `json:"reset"`
 	Reconciled  int `json:"reconciled"`
 	Waiting     int `json:"waiting"`
@@ -86,6 +91,7 @@ func (r *RecheckReport) Summary() string {
 	if r.SearchSkipped {
 		missing = "missing (searched shortly before, not again)"
 	}
+	add(r.NoFile, "shown as available without a file (taken back)")
 	add(r.Missing, missing)
 	add(r.Reconciled, "already on disk")
 	add(r.Reset, "failed attempts reset")
@@ -102,6 +108,12 @@ func (r *RecheckReport) Summary() string {
 // attempt whose every download failed starts a new one, and whatever is out
 // (released or aired), monitored and still missing gets one search. Items
 // that are not out yet, downloading or unmonitored are only counted.
+//
+// It also checks the items shown in the library without an import in their
+// current attempt, in any request that is not canceled or failed (such a
+// request may show as completed): without a file in Sonarr/Radarr they go
+// back to the stage their attempt really reached and are then checked like
+// any unfinished item.
 func (a *Actions) RecheckOpen(ctx context.Context) (*RecheckReport, error) {
 	id := a.begin(ctx, "recheck_open", "", 0, nil)
 	rep, err := a.recheckOpen(ctx)
@@ -146,6 +158,11 @@ func (a *Actions) recheckOpen(ctx context.Context) (*RecheckReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list open requests: %w", err)
 	}
+	unconfirmed, err := a.Store.UnconfirmedRequests(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list unconfirmed requests: %w", err)
+	}
+	reqs = mergeRequests(reqs, unconfirmed)
 	ord, err := a.Store.LoadStageOrdinals(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load stages: %w", err)
@@ -171,6 +188,22 @@ func (a *Actions) recheckOpen(ctx context.Context) (*RecheckReport, error) {
 		}
 	}
 	return rc.rep, nil
+}
+
+// mergeRequests joins two id-sorted request lists without duplicates.
+func mergeRequests(a, b []store.Request) []store.Request {
+	seen := make(map[int64]bool, len(a))
+	out := append([]store.Request(nil), a...)
+	for _, r := range a {
+		seen[r.ID] = true
+	}
+	for _, r := range b {
+		if !seen[r.ID] {
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, func(x, y store.Request) int { return cmp.Compare(x.ID, y.ID) })
+	return out
 }
 
 func (rc *recheck) request(ctx context.Context, r store.Request) {
@@ -200,6 +233,8 @@ func (rc *recheck) request(ctx context.Context, r store.Request) {
 func (rc *recheck) count(r *RecheckRequest, outcome string) {
 	r.Counts[outcome]++
 	switch outcome {
+	case outNoFile:
+		rc.rep.NoFile++
 	case outMissing:
 		rc.rep.Missing++
 	case outReset:
@@ -254,12 +289,51 @@ func (rc *recheck) titleOnly(ctx context.Context, r store.Request) string {
 }
 
 func (rc *recheck) item(ctx context.Context, it *store.MediaItem) []string {
-	if rc.ord[it.CurrentStage] >= rc.ord["imported"] {
-		return []string{outDone}
+	past := rc.ord[it.CurrentStage] >= rc.ord["imported"]
+	if past {
+		// Imported in this attempt: the file came through Sonarr/Radarr.
+		imported, err := rc.a.Store.HasTransition(ctx, it.ID, it.CurrentCycle, "imported")
+		if err != nil {
+			return []string{rc.errorf(itemLabel(it), err)}
+		}
+		if imported {
+			return []string{outDone}
+		}
 	}
-	dls, err := rc.a.Store.DownloadsForItemCycle(ctx, it.ID, it.CurrentCycle)
+
+	var st arrState
+	var err error
+	if it.MediaType == "movie" {
+		st, err = rc.movie(ctx, it)
+	} else {
+		st, err = rc.episode(ctx, it)
+	}
 	if err != nil {
 		return []string{rc.errorf(itemLabel(it), err)}
+	}
+
+	var out []string
+	if past {
+		// Only Jellyfin, Seerr or the presence check said it is there; the
+		// file in Sonarr/Radarr decides. Without one the claim is taken back.
+		if !st.known || st.hasFile {
+			return []string{outDone}
+		}
+		stage, removed, err := rc.a.Store.RewindUnconfirmed(ctx, it.ID)
+		if err != nil {
+			return []string{rc.errorf(itemLabel(it), err)}
+		}
+		rc.a.Log.Info("recheck: shown in the library without a file, taken back",
+			"item", it.ID, "label", itemLabel(it), "from", it.CurrentStage, "to", stage,
+			"cycle", it.CurrentCycle, "transitions_removed", removed)
+		it.CurrentStage = stage
+		rc.touch(it)
+		out = append(out, outNoFile)
+	}
+
+	dls, err := rc.a.Store.DownloadsForItemCycle(ctx, it.ID, it.CurrentCycle)
+	if err != nil {
+		return append(out, rc.errorf(itemLabel(it), err))
 	}
 	inFlight, allFailed := false, len(dls) > 0
 	for _, d := range dls {
@@ -271,29 +345,20 @@ func (rc *recheck) item(ctx context.Context, it *store.MediaItem) []string {
 		}
 	}
 
-	var st arrState
-	if it.MediaType == "movie" {
-		st, err = rc.movie(ctx, it)
-	} else {
-		st, err = rc.episode(ctx, it)
-	}
 	switch {
-	case err != nil:
-		return []string{rc.errorf(itemLabel(it), err)}
 	case !st.known:
-		return []string{outNotInArr}
+		return append(out, outNotInArr)
 	case inFlight:
-		return []string{outDownloading}
+		return append(out, outDownloading)
 	case st.hasFile:
 		if _, err := rc.a.Store.ApplyStage(ctx, it.ID, it.CurrentCycle, "imported", 0,
 			"re-check: file already in "+st.arr); err != nil {
-			return []string{rc.errorf(itemLabel(it), err)}
+			return append(out, rc.errorf(itemLabel(it), err))
 		}
 		rc.touch(it)
-		return []string{outReconciled}
+		return append(out, outReconciled)
 	}
 
-	var out []string
 	if allFailed {
 		if _, err := rc.a.Store.BumpItemCycle(ctx, it.ID); err != nil {
 			return []string{rc.errorf(itemLabel(it), err)}

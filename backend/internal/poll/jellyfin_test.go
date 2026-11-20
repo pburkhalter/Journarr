@@ -23,6 +23,10 @@ type fakeJellyfin struct {
 	items  []map[string]any // newest first
 	series map[string]string
 	pages  int
+	// ignoreIsMissing makes the fake list virtual episodes even when the
+	// caller asks for IsMissing=false (an older or different Jellyfin).
+	ignoreIsMissing bool
+	askedNoMissing  bool
 }
 
 func (f *fakeJellyfin) handler() http.HandlerFunc {
@@ -44,14 +48,26 @@ func (f *fakeJellyfin) handler() http.HandlerFunc {
 			}})
 		case r.URL.Path == "/Items":
 			f.pages++
+			all := f.items
+			if q.Get("IsMissing") == "false" {
+				f.askedNoMissing = true
+				if !f.ignoreIsMissing {
+					all = nil
+					for _, it := range f.items {
+						if it["LocationType"] != "Virtual" {
+							all = append(all, it)
+						}
+					}
+				}
+			}
 			start, limit := atoi(q.Get("StartIndex")), atoi(q.Get("Limit"))
 			end := start + limit
-			if end > len(f.items) {
-				end = len(f.items)
+			if end > len(all) {
+				end = len(all)
 			}
 			page := []map[string]any{}
 			if start < end {
-				page = f.items[start:end]
+				page = all[start:end]
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"Items": page})
 		default:
@@ -75,8 +91,18 @@ func episode(id, seriesID string, season, ep int64, created time.Time) map[strin
 	return map[string]any{
 		"Id": id, "Type": "Episode", "SeriesId": seriesID,
 		"ParentIndexNumber": season, "IndexNumber": ep,
-		"DateCreated": created.UTC().Format("2006-01-02T15:04:05.0000000Z"),
+		"DateCreated":  created.UTC().Format("2006-01-02T15:04:05.0000000Z"),
+		"LocationType": "FileSystem", "Path": "/media/tv/" + id + ".mkv",
 	}
+}
+
+// placeholder is what Jellyfin lists for an episode it knows from the series
+// metadata but has no file for: no Path, LocationType Virtual.
+func placeholder(id, seriesID string, season, ep int64, created time.Time) map[string]any {
+	it := episode(id, seriesID, season, ep, created)
+	it["LocationType"] = "Virtual"
+	delete(it, "Path")
+	return it
 }
 
 // trackedEpisode creates an active tv request with one imported episode.
@@ -199,5 +225,36 @@ func TestJellyfinPollerStopsPagingBehindTheCursor(t *testing.T) {
 
 	if fake.pages != 1 {
 		t.Fatalf("fetched %d pages, want 1 — the overlap floor should stop the walk", fake.pages)
+	}
+}
+
+// A series refresh in Jellyfin adds a placeholder with a fresh DateCreated for
+// every missing episode. They are not on disk and must not become available
+// (2026-11-20: 76 missing episodes announced on WhatsApp). The poller asks
+// Jellyfin to leave them out and skips any that come anyway.
+func TestJellyfinPollerIgnoresVirtualEpisodes(t *testing.T) {
+	for _, ignore := range []bool{false, true} {
+		st := newTestStore(t)
+		real := trackedEpisode(t, st, 333, 1, 1)
+		trackedEpisode(t, st, 444, 1, 2) // only a placeholder in Jellyfin
+
+		now := time.Now()
+		fake := &fakeJellyfin{series: map[string]string{"s3": "333", "s4": "444"}, ignoreIsMissing: ignore}
+		fake.items = []map[string]any{
+			placeholder("v1", "s4", 1, 2, now),
+			episode("e1", "s3", 1, 1, now.Add(-time.Minute)),
+		}
+		srv := httptest.NewServer(fake.handler())
+		p := &JellyfinPoller{Store: st, Log: quietLog(), Jelly: clients.NewJellyfin(srv.URL, "key", 0)}
+		p.pass(context.Background())
+		srv.Close()
+
+		if !fake.askedNoMissing {
+			t.Fatal("poller did not ask Jellyfin for IsMissing=false")
+		}
+		got := availableEvents(t, st)
+		if len(got) != 1 || got[0] != real {
+			t.Fatalf("ignoreIsMissing=%v: available events = %v, want only the real episode [%d]", ignore, got, real)
+		}
 	}
 }

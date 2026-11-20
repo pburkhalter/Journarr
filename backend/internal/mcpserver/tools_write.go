@@ -30,8 +30,10 @@ func (s *Server) registerWriteTools() {
 	addTool(s, &mcp.Tool{Name: "recheck_open_requests", Annotations: mutating("Re-check open requests", false, false),
 		Description: "Square every open request with Sonarr/Radarr: items whose file is already on disk move " +
 			"to imported, attempts whose every download failed start again, and every released or aired, " +
-			"monitored, missing movie/episode gets one search (not again within 15 minutes). Returns per " +
-			"request what it found: missing, waiting (not out yet), downloading, unmonitored, not_in_arr."},
+			"monitored, missing movie/episode gets one search (not again within 15 minutes). Items shown as " +
+			"available without an import and without a file in Sonarr/Radarr (also in requests shown as " +
+			"completed) go back to the stage they really reached (no_file). Returns per request what it " +
+			"found: no_file, missing, waiting (not out yet), downloading, unmonitored, not_in_arr."},
 		true, s.recheckOpen)
 
 	addTool(s, &mcp.Tool{Name: "retry_item", Annotations: mutating("Retry a download", false, false),

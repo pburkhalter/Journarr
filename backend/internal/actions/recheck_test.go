@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -273,5 +274,178 @@ func TestRecheckOfferedWithAnArr(t *testing.T) {
 	a.Radarr = &clients.Arr{}
 	if !hasKind(a.Available(context.Background(), "global", 0), "recheck-open") {
 		t.Fatal("recheck-open not offered with Radarr")
+	}
+}
+
+// Jellyfin's placeholders for missing episodes made a whole series look
+// available and announced (2026-11-20, The Venture Bros.: 79 episodes in the
+// notice, 6 files). The re-check takes such claims back where Sonarr/Radarr
+// have no file, also in a request that shows as completed, and leaves real
+// files alone: imported ones and those only the presence check saw.
+func TestRecheckTakesBackAvailableWithoutFile(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	now := time.Date(2026, 11, 20, 22, 0, 0, 0, time.UTC)
+	past := "2026-01-01T00:00:00Z"
+
+	sonarr := &fakeArr{
+		series: map[string]map[string]any{"72306": {"id": 60, "tvdbId": 72306}},
+		episodes: map[string][]map[string]any{"60": {
+			{"id": 1, "seriesId": 60, "seasonNumber": 1, "episodeNumber": 1, "airDateUtc": past, "monitored": true, "hasFile": true},
+			{"id": 2, "seriesId": 60, "seasonNumber": 1, "episodeNumber": 2, "airDateUtc": past, "monitored": true},
+			{"id": 3, "seriesId": 60, "seasonNumber": 1, "episodeNumber": 3, "airDateUtc": past, "monitored": true},
+			{"id": 4, "seriesId": 60, "seasonNumber": 1, "episodeNumber": 4, "airDateUtc": past, "monitored": true},
+			{"id": 5, "seriesId": 60, "seasonNumber": 1, "episodeNumber": 5, "airDateUtc": past, "monitored": true, "hasFile": true},
+		}},
+	}
+	radarr := &fakeArr{movies: map[string]map[string]any{
+		"9": {"id": 90, "tmdbId": 9, "hasFile": false, "monitored": true, "isAvailable": true, "digitalRelease": past},
+	}}
+	a := &Actions{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Radarr: arrClient(t, "radarr", radarr), Sonarr: arrClient(t, "sonarr", sonarr),
+		Now: func() time.Time { return now }}
+
+	reqID, err := st.UpsertRequest(ctx, store.Request{SeerrRequestID: i64(1), MediaType: "tv",
+		TvdbID: i64(72306), Title: "The Venture Bros."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := func(n int64, stages ...string) int64 {
+		id, err := st.EnsureMediaItem(ctx, store.MediaItem{RequestID: &reqID, MediaType: "episode",
+			TvdbID: i64(72306), SonarrSeriesID: i64(60), SonarrEpisodeID: i64(n),
+			SeasonNumber: i64(1), EpisodeNumber: i64(n), Title: "The Venture Bros."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range stages {
+			if _, err := st.ApplyStage(ctx, id, 1, s, 0, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return id
+	}
+	download := func(itemID int64, clientID, state string) {
+		dl, err := st.UpsertDownload(ctx, store.Download{ClientDownloadID: clientID, Arr: "sonarr"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.LinkDownloadItem(ctx, dl, itemID, 1); err != nil {
+			t.Fatal(err)
+		}
+		if state != "grabbed" {
+			if err := st.SetDownloadState(ctx, dl, state, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	sighting := func(itemID int64) string {
+		key := fmt.Sprintf("jellyfin:avail:%d:1", itemID)
+		if _, _, err := st.InsertEvent(ctx, "jellyfin", "available", key, []byte(`{}`)); err != nil {
+			t.Fatal(err)
+		}
+		return key
+	}
+
+	real := ep(1, "grabbed", "imported", "available", "notified")
+	placeholder := ep(2, "available", "notified")
+	placeholderKey := sighting(placeholder)
+	queued := ep(3, "grabbed", "submitted", "available", "notified")
+	download(queued, "dl-queued", "submitted")
+	failed := ep(4, "grabbed", "available", "notified")
+	download(failed, "dl-failed", "failed")
+	presence := ep(5, "available") // file on disk, only the presence check saw it
+
+	movieReq, err := st.UpsertRequest(ctx, store.Request{SeerrRequestID: i64(2), MediaType: "movie",
+		TmdbID: i64(9), Title: "Film"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	movie, err := st.EnsureMediaItem(ctx, store.MediaItem{RequestID: &movieReq, MediaType: "movie",
+		TmdbID: i64(9), Title: "Film"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ApplyStage(ctx, movie, 1, "available", 0, "seerr MEDIA_AVAILABLE"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{reqID, movieReq} {
+		if s, _ := st.RecomputeRequestStatus(ctx, id); s != "completed" {
+			t.Fatalf("fixture request %d is %q, want completed", id, s)
+		}
+	}
+
+	rep, err := a.RecheckOpen(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Errors) > 0 {
+		t.Fatalf("errors: %v", rep.Errors)
+	}
+	if rep.Open != 2 || rep.NoFile != 4 || rep.Reset != 1 || rep.Downloading != 1 || rep.Missing != 3 {
+		t.Fatalf("report = %+v", *rep)
+	}
+
+	stage := func(id int64) (string, int) {
+		it, err := st.GetMediaItem(ctx, id)
+		if err != nil || it == nil {
+			t.Fatalf("item %d: %v", id, err)
+		}
+		return it.CurrentStage, it.CurrentCycle
+	}
+	for _, c := range []struct {
+		name  string
+		id    int64
+		stage string
+		cycle int
+	}{
+		{"imported", real, "notified", 1},
+		{"presence", presence, "available", 1},
+		{"placeholder", placeholder, "requested", 1},
+		{"queued download", queued, "submitted", 1},
+		{"failed download", failed, "requested", 2},
+		{"movie", movie, "requested", 1},
+	} {
+		if s, cy := stage(c.id); s != c.stage || cy != c.cycle {
+			t.Errorf("%s: %s in cycle %d, want %s in cycle %d", c.name, s, cy, c.stage, c.cycle)
+		}
+	}
+
+	// Both requests are open again.
+	for _, id := range []int64{reqID, movieReq} {
+		if r, _ := st.GetRequest(ctx, id); r.Status != "active" {
+			t.Errorf("request %d status %q, want active", id, r.Status)
+		}
+	}
+
+	// The false notices no longer count as announced, so the real arrival
+	// gets its own; the real episode keeps its notice.
+	announced, err := st.NotifiedItemIDs(ctx, reqID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !announced[real] || announced[placeholder] || announced[queued] || announced[failed] {
+		t.Errorf("announced = %v, want only %d", announced, real)
+	}
+	// The placeholder sighting no longer blocks the real one of this attempt.
+	if _, ok, err := st.InsertEvent(ctx, "jellyfin", "available", placeholderKey, []byte(`{}`)); err != nil || !ok {
+		t.Errorf("real sighting after the take-back: inserted=%v err=%v", ok, err)
+	}
+
+	// The missing episodes and the film were searched once.
+	if sc := sonarr.sent(); len(sc) != 1 || sc[0]["name"] != "EpisodeSearch" || !sameIDs(sc[0]["episodeIds"], 2, 4) {
+		t.Errorf("sonarr commands = %v", sc)
+	}
+	if rc := radarr.sent(); len(rc) != 1 || !sameIDs(rc[0]["movieIds"], 90) {
+		t.Errorf("radarr commands = %v", rc)
+	}
+
+	// A second run finds nothing more to take back.
+	now = now.Add(RecheckSearchCooldown + time.Minute)
+	rep2, err := a.RecheckOpen(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep2.NoFile != 0 {
+		t.Errorf("second run took back %d items again", rep2.NoFile)
 	}
 }

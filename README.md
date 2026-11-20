@@ -122,7 +122,7 @@ sees the tools of its scope:
 | Scope | Tools |
 |---|---|
 | read | `get_overview` (health with reasons, counts, stuck, disks), `list_requests`, `get_request`, `search_titles` (TMDB via Seerr, with status), `get_title`, `list_library`, `get_queue`, `get_calendar`, `list_options` (quality profiles, root folders) |
-| write | `request_title` (through Seerr, so Journarr tracks it), `update_title` (monitored, quality profile, minimum availability, season monitoring), `search_title`, `retry_item`, `cancel_request`, `resend_notification`, `scan_jellyfin` |
+| write | `request_title` (through Seerr, so Journarr tracks it), `update_title` (monitored, quality profile, minimum availability, season monitoring), `search_title`, `recheck_open_requests` (square open requests with Sonarr/Radarr, take back items shown as available without a file, search what is out and missing), `retry_item`, `cancel_request`, `resend_notification`, `scan_jellyfin` |
 
 Every call is logged with client and tool; every write lands in the audit
 (`GET /api/actions/log`) with actor `mcp:<client>`.

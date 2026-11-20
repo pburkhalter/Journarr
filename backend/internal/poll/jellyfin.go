@@ -108,6 +108,11 @@ pages:
 			if hasCursor && ok && created.Before(floor) {
 				break pages
 			}
+			// The query already leaves placeholders out; this guard holds if a
+			// Jellyfin version ignores IsMissing. A placeholder has no file.
+			if it.Virtual() {
+				continue
+			}
 			switch it.Type {
 			case "Movie":
 				tmdb := providerID(it.ProviderIds, "Tmdb")

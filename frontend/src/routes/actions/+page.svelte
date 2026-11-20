@@ -64,7 +64,7 @@
 			return confirm.ask({
 				title: a.label,
 				message:
-					'Checks every open request against Sonarr/Radarr and searches once for everything released or aired that is still missing. It does not search again within 15 minutes.',
+					'Checks every open request against Sonarr/Radarr and searches once for everything released or aired that is still missing. It does not search again within 15 minutes. Items shown as available without a file in Sonarr/Radarr go back to the stage they really reached, also in requests shown as completed.',
 				confirmLabel: 'Re-check'
 			});
 		}
@@ -98,6 +98,12 @@
 	const outcomeInfo: { key: RecheckOutcome; label: string; hint?: string; tone: string }[] = [
 		{ key: 'error', label: 'Could not check', tone: 'text-destructive' },
 		{
+			key: 'no_file',
+			label: 'Shown as available without a file — taken back',
+			hint: 'Jellyfin or Seerr said so, but Sonarr/Radarr have no file. The items are back at the stage they really reached.',
+			tone: 'text-warning'
+		},
+		{
 			key: 'not_in_arr',
 			label: 'Not in Sonarr/Radarr',
 			hint: 'Seerr could not add the title — check the request in Seerr.',
@@ -118,6 +124,7 @@
 	];
 	const countWord: Record<RecheckOutcome, string> = {
 		error: 'error',
+		no_file: 'no file',
 		not_in_arr: 'unknown',
 		reconciled: 'on disk',
 		reset: 'reset',
@@ -195,7 +202,7 @@
 		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Open requests</h2>
 		<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 			{#each recheckActions as a (a.id)}
-				{@render actionCard(a, 'Match with Sonarr/Radarr, restart failed attempts, search what is out')}
+				{@render actionCard(a, 'Match with Sonarr/Radarr, take back what has no file, restart failed attempts, search what is out')}
 			{/each}
 		</div>
 		{#if report}
