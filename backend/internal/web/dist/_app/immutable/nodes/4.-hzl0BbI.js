@@ -1,0 +1,1 @@
+import{Y as e,et as t}from"../chunks/QISsrngy.js";import{r as n}from"../chunks/Dt-HX3Vu.js";import"../chunks/xihTtKlq.js";function r(e,t){throw new n(e,t.toString())}var i=t({load:()=>a}),a=({url:e})=>{let t=new URLSearchParams({status:`done`}),n=e.searchParams.get(`q`);n&&t.set(`q`,n),r(307,`/?${t}`)};e();function o(e){}export{o as component,i as universal};

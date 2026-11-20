@@ -1,0 +1,1 @@
+import{B as e,V as t,k as n,z as r}from"./QISsrngy.js";var i=new class{#e=t(r(Date.now()));#t;get now(){return!this.#t&&typeof window<`u`&&(this.#t=setInterval(()=>e(this.#e,Date.now(),!0),1e3)),n(this.#e)}};export{i as t};
