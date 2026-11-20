@@ -1,6 +1,6 @@
-// Package web embeds the built frontend. frontend/ builds into dist/ here;
-// before the first build only the placeholder .gitignore exists and the API
-// serves a plain notice instead.
+// Package web embeds the built frontend. frontend/ builds into dist/ here and
+// the build is committed, so `go build` works without Node; CI fails when the
+// committed build no longer matches the source.
 package web
 
 import (

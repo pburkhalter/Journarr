@@ -10,10 +10,10 @@ backend-dev:
 frontend-dev:
 	cd frontend && npm run dev
 
-## frontend: production build into the Go embed target
+## frontend: production build into the Go embed target (committed, see
+## backend/internal/web/embed.go)
 frontend:
 	cd frontend && npm run build
-	printf '*\n!.gitignore\n' > $(DIST)/.gitignore
 
 ## build: full production binary (frontend embedded)
 build: frontend

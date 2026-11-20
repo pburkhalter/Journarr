@@ -64,8 +64,14 @@ jobs:
         working-directory: frontend
       # The built frontend is committed (backend/internal/web/dist) and
       # embedded into the binary. A stale commit means the image ships an
-      # older UI than the source; this step makes that visible.
-      # Chunk hashes differ between local and CI builds, so this only warns.
+      # older UI than the source, so this fails the build. `git status`
+      # also sees new hashed files the commit is missing, which `git diff`
+      # does not.
       - name: committed frontend build is current
-        continue-on-error: true
-        run: git diff --exit-code --stat -- backend/internal/web/dist
+        run: |
+          changes="$(git status --porcelain --untracked-files=all -- backend/internal/web/dist)"
+          if [ -n "$changes" ]; then
+            echo "::error::backend/internal/web/dist is stale: run 'make frontend' and commit the result"
+            echo "$changes"
+            exit 1
+          fi
