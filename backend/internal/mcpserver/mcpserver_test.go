@@ -370,3 +370,16 @@ func TestRemovalToolsOnlyRequest(t *testing.T) {
 		t.Fatalf("overview pending = %v", out["pending_removal_requests"])
 	}
 }
+
+// Empty lists are [] in answers, not null, so a client can tell "nothing"
+// from "not reported".
+func TestEmptyListsAreArrays(t *testing.T) {
+	_, _, _, url := newServer(t, 30)
+	out, isErr := call(t, connect(t, url, haToken), "get_queue", map[string]any{})
+	if isErr {
+		t.Fatalf("get_queue: %v", out)
+	}
+	if d, ok := out["downloads"].([]any); !ok || len(d) != 0 {
+		t.Fatalf("downloads = %#v, want []", out["downloads"])
+	}
+}

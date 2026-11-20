@@ -133,7 +133,7 @@ func (s *Server) getOverview(ctx context.Context, _ noArgs) (any, error) {
 			FreeGB float64 `json:"free_gib"`
 			Total  float64 `json:"total_gib,omitempty"`
 		}
-		var mounts []mount
+		mounts := []mount{}
 		for _, m := range s.d.Storage.Mounts(ctx) {
 			if !m.IsLibrary {
 				continue
@@ -342,7 +342,7 @@ func (s *Server) getTitle(ctx context.Context, in TitleRef) (any, error) {
 			Status string `json:"status"`
 			By     string `json:"requested_by,omitempty"`
 		}
-		var rs []req
+		rs := []req{}
 		for _, r := range reqs {
 			rs = append(rs, req{ID: r.ID, Status: r.Status, By: r.RequestedBy})
 		}
@@ -410,7 +410,7 @@ func (s *Server) libraryView(ctx context.Context, e *actions.LibraryEntry) map[s
 		Total     int64   `json:"total_episodes"`
 		SizeGiB   float64 `json:"size_gib"`
 	}
-	var seasons []season
+	seasons := []season{}
 	for _, x := range sr.Seasons {
 		seasons = append(seasons, season{Number: x.SeasonNumber, Monitored: x.Monitored,
 			Files: x.Statistics.EpisodeFileCount, Episodes: x.Statistics.EpisodeCount,
@@ -457,7 +457,7 @@ func (s *Server) listLibrary(ctx context.Context, in listLibraryIn) (any, error)
 			(in.QualityProfileID == 0 || in.QualityProfileID == profile) &&
 			(!in.Missing || missing)
 	}
-	var rows []map[string]any
+	rows := []map[string]any{}
 	switch in.MediaType {
 	case "movie":
 		arr := s.d.Actions.Radarr
@@ -527,7 +527,7 @@ func (s *Server) getQueue(ctx context.Context, _ noArgs) (any, error) {
 		Protocol string  `json:"protocol,omitempty"`
 		Error    string  `json:"error,omitempty"`
 	}
-	var rows []row
+	rows := []row{}
 	var errs []string
 	for _, arr := range []*clients.Arr{s.d.Actions.Sonarr, s.d.Actions.Radarr} {
 		if arr == nil {
@@ -590,7 +590,7 @@ func (s *Server) getCalendar(ctx context.Context, in calendarIn) (any, error) {
 			HasFile   bool   `json:"has_file"`
 			Monitored bool   `json:"monitored"`
 		}
-		var list []ep
+		list := []ep{}
 		for _, e := range eps {
 			list = append(list, ep{Air: e.AirDateUTC, Series: e.Series.Title,
 				Episode: fmt.Sprintf("S%02dE%02d %s", e.SeasonNumber, e.EpisodeNumber, e.Title),
@@ -612,7 +612,7 @@ func (s *Server) getCalendar(ctx context.Context, in calendarIn) (any, error) {
 			HasFile   bool   `json:"has_file"`
 			Monitored bool   `json:"monitored"`
 		}
-		var list []mv
+		list := []mv{}
 		for _, m := range movies {
 			list = append(list, mv{Title: m.Title, TmdbID: m.TmdbID, InCinemas: m.InCinemas,
 				Digital: m.DigitalRelease, Physical: m.PhysicalRelease, HasFile: m.HasFile, Monitored: m.Monitored})
@@ -642,7 +642,7 @@ func (s *Server) listOptions(ctx context.Context, _ noArgs) (any, error) {
 				Path    string  `json:"path"`
 				FreeGiB float64 `json:"free_gib"`
 			}
-			var fs []folder
+			fs := []folder{}
 			for _, f := range rf {
 				fs = append(fs, folder{Path: f.Path, FreeGiB: gibs(f.FreeSpace)})
 			}
