@@ -89,11 +89,8 @@ func (c *Checker) pass(ctx context.Context) {
 			c.Log.Debug("update check: github", "repo", repo, "err", err)
 			continue
 		}
-		// A running version of "" or "main"/"dev" (latest-tracking build) isn't
-		// a comparable release tag — record latest but don't flag an update.
-		avail := cur != "" && isSemver(cur) && isSemver(latest) && semverLess(cur, latest)
 		c.mu.Lock()
-		c.byID[service] = Info{Current: cur, Latest: latest, UpdateAvailable: avail}
+		c.byID[service] = Info{Current: cur, Latest: latest, UpdateAvailable: updateAvailable(cur, latest)}
 		c.mu.Unlock()
 	}
 }
@@ -136,6 +133,15 @@ func (c *Checker) latestTag(ctx context.Context, repo string) (string, error) {
 		return "", &httpErr{404}
 	}
 	return best, nil
+}
+
+// updateAvailable reports whether the running version is an older release
+// than latest. "" and "dev" are not comparable and get no badge. Journarr's
+// builds from main report "2026.11.20-eaf07bd" (date + commit): that parses
+// as a version far above any v0.x tag, so it gets no badge either — which is
+// right, such a build is at least as new as the last tag.
+func updateAvailable(cur, latest string) bool {
+	return cur != "" && isSemver(cur) && isSemver(latest) && semverLess(cur, latest)
 }
 
 type httpErr struct{ code int }

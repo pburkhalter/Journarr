@@ -311,11 +311,10 @@ func run() error {
 
 	// GitHub update checker for the self-hosted custom stack. Compares the
 	// running version (from each service's health surface) against the repo's
-	// highest git tag. arrarr + notifyarr cut semver tags, so both get an
-	// update badge. Journarr itself tracks :latest (no tags) — its tile shows
-	// the build version but no update badge, which is correct for a
-	// continuously-deployed app.
-	updateRepos := map[string]string{}
+	// highest git tag. arrarr, notifyarr and Journarr itself (since v0.2.0)
+	// cut semver tags, so all three get an update badge. A Journarr build from
+	// main reports date+commit and never shows one (see updates.updateAvailable).
+	updateRepos := map[string]string{"journarr": "pburkhalter/Journarr"}
 	if reg.Arrarr() != nil {
 		updateRepos["arrarr"] = "pburkhalter/arrarr"
 	}
