@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 go build \
     -o /out/journarr ./cmd/journarr
 
 # Stage 3: runtime
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/journarr /journarr
 EXPOSE 8484
 USER nonroot
