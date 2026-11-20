@@ -88,3 +88,30 @@ func TestPushoverForm(t *testing.T) {
 		t.Fatalf("form = %v", got)
 	}
 }
+
+func TestSkipDegradedStillAlertsDown(t *testing.T) {
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	rec := &recorder{}
+	a := &Alerter{Sender: rec, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DownAfter: 10 * time.Minute, DegradedAfter: 2 * time.Hour,
+		SkipDegraded: map[string]bool{"waha": true}, Now: func() time.Time { return now }}
+	ctx := context.Background()
+	step := func(d time.Duration, svc, status string) {
+		now = now.Add(d)
+		a.Observe(ctx, svc, status, "detail")
+	}
+
+	step(0, "waha", "degraded")
+	step(3*time.Hour, "waha", "degraded") // skipped: another notifier has it
+	step(time.Minute, "waha", "down")     // down timer starts here, not at the degraded start
+	step(5*time.Minute, "waha", "down")   // 5 min: not yet
+	step(6*time.Minute, "waha", "down")   // 11 min → alert
+	step(time.Minute, "waha", "degraded") // API back, session not yet: counts as up
+	step(0, "sonarr", "degraded")
+	step(2*time.Hour, "sonarr", "degraded") // not in the list → alert
+
+	want := []string{"Journarr: waha down", "Journarr: waha recovered", "Journarr: sonarr degraded"}
+	if strings.Join(rec.sent, "|") != strings.Join(want, "|") {
+		t.Fatalf("sent %q\nwant %q", rec.sent, want)
+	}
+}

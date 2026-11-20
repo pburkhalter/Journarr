@@ -95,6 +95,16 @@ for `ALERT_DOWN_AFTER` (default 10m) or **degraded** for
 gets worse, one when it recovers. Pushover rather than WhatsApp on purpose:
 the alert has to arrive when notifyarr or WAHA is what broke.
 
+Two rules keep one problem to one message:
+
+- `ALERT_SKIP_DEGRADED` (comma-separated service ids, default empty) leaves a
+  service's degraded state to another notifier; down is still alerted. Example:
+  `ALERT_SKIP_DEGRADED=waha` when Home Assistant already pushes a lost
+  WhatsApp session.
+- With a Prowlarr instance configured, Sonarr's and Radarr's `Indexer*` health
+  checks stay on their tiles but do not make them degraded: Prowlarr reports
+  the same indexer failure, so it alerts once instead of three times.
+
 ```
 PUSHOVER_TOKEN=…   # application token
 PUSHOVER_USER=…    # user or group key
