@@ -148,6 +148,7 @@ func (c *Arr) indexerGrabsToday(ctx context.Context) (int, bool) {
 // MovieRelease is Radarr's release/availability view of a movie — enough to
 // tell whether a requested film is out yet and, if not, when it's expected.
 type MovieRelease struct {
+	ID              int64 // Radarr movie id
 	TmdbID          int64
 	IsAvailable     bool   // true once past minimumAvailability (grabbable)
 	HasFile         bool   // a file is on disk — nothing to wait for
@@ -158,11 +159,46 @@ type MovieRelease struct {
 	InCinemas       *time.Time
 }
 
+// Waiting decides whether a film is genuinely not out yet, from its dates
+// rather than from Radarr's isAvailable alone. isAvailable is a function of
+// the profile's minimumAvailability: with "announced" every film reads as
+// available the moment it is added, which turned every unreleased request
+// into a stuck item. A future date wins over that flag; the flag still counts
+// when the film is out but the profile keeps Radarr from searching yet. The
+// date is nil when Radarr has none (TBA).
+func (m *MovieRelease) Waiting(now time.Time) (*time.Time, bool) {
+	if m == nil || m.HasFile {
+		return nil, false
+	}
+	when := m.expected()
+	switch {
+	case when == nil:
+		return nil, true // TBA: nothing to search for yet
+	case when.After(now):
+		return when, true
+	case !m.IsAvailable:
+		return when, true // out, but below minimumAvailability: Radarr won't search
+	}
+	return nil, false
+}
+
+// expected picks the soonest date at which Radarr expects the film to become
+// grabbable: digital, else physical, else (as a rough signal) cinema.
+func (m *MovieRelease) expected() *time.Time {
+	for _, d := range []*time.Time{m.DigitalRelease, m.PhysicalRelease, m.InCinemas} {
+		if d != nil && !d.IsZero() {
+			return d
+		}
+	}
+	return nil
+}
+
 // LookupMovieByTmdb fetches Radarr's record for a tmdb id. Returns (nil, nil)
 // when Radarr has no such movie (never added / removed). Radarr only — call it
 // on the radarr instance.
 func (c *Arr) LookupMovieByTmdb(ctx context.Context, tmdbID int64) (*MovieRelease, error) {
 	var out []struct {
+		ID              int64      `json:"id"`
 		TmdbID          int64      `json:"tmdbId"`
 		IsAvailable     bool       `json:"isAvailable"`
 		HasFile         bool       `json:"hasFile"`
@@ -181,7 +217,7 @@ func (c *Arr) LookupMovieByTmdb(ctx context.Context, tmdbID int64) (*MovieReleas
 	}
 	m := out[0]
 	return &MovieRelease{
-		TmdbID: m.TmdbID, IsAvailable: m.IsAvailable, HasFile: m.HasFile, Status: m.Status,
+		ID: m.ID, TmdbID: m.TmdbID, IsAvailable: m.IsAvailable, HasFile: m.HasFile, Status: m.Status,
 		Monitored: m.Monitored, DigitalRelease: m.DigitalRelease,
 		PhysicalRelease: m.PhysicalRelease, InCinemas: m.InCinemas,
 	}, nil

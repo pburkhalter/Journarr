@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { executeAction, getActions, getFlowSettings, putFlowSettings } from '#lib/api.ts';
+	import { executeAction, getActions, getFlowSettings, putFlowSettings, recheckOpen } from '#lib/api.ts';
+	import { clock } from '#lib/clock.svelte.ts';
 	import { confirm } from '#lib/confirm.svelte.ts';
 	import { confirmJellyfinScan } from '#lib/prompts.ts';
-	import type { Action } from '#lib/types.ts';
-	import { cn } from '#lib/utils.ts';
+	import type { Action, RecheckOutcome, RecheckReport, RecheckRequest } from '#lib/types.ts';
+	import { cn, relativeTime } from '#lib/utils.ts';
 
 	let actions = $state<Action[]>([]);
 	let loaded = $state(false);
@@ -53,40 +54,94 @@
 		void load();
 	});
 
-	const searchActions = $derived(actions.filter((a) => a.kind === 'search-missing'));
+	const recheckActions = $derived(actions.filter((a) => a.kind === 'recheck-open'));
 	const libraryActions = $derived(actions.filter((a) => a.kind === 'library-scan'));
 	const transcodeActions = $derived(actions.filter((a) => a.kind.startsWith('transcode-')));
 
-	function paramsFor(a: Action): Record<string, unknown> {
-		if (a.kind === 'search-missing') return { instance_id: a.instance_id };
-		return {};
-	}
-
 	// Same question as anywhere else the same action is offered.
 	function confirmRun(a: Action): Promise<boolean> {
-		if (a.kind === 'search-missing') {
+		if (a.kind === 'recheck-open') {
 			return confirm.ask({
 				title: a.label,
-				message: 'Trigger a search for all missing monitored items? This can start many downloads.',
-				confirmLabel: 'Search'
+				message:
+					'Checks every open request against Sonarr/Radarr and searches once for everything released or aired that is still missing. It does not search again within 15 minutes.',
+				confirmLabel: 'Re-check'
 			});
 		}
 		if (a.kind === 'library-scan') return confirmJellyfinScan();
 		return Promise.resolve(true);
 	}
 
+	// The last re-check's findings, shown under its card.
+	let report = $state<RecheckReport | null>(null);
+
 	async function run(a: Action) {
 		if (!(await confirmRun(a))) return;
 		busy[a.id] = true;
 		result[a.id] = '';
 		try {
-			await executeAction(a.kind, paramsFor(a));
-			result[a.id] = 'triggered';
+			if (a.kind === 'recheck-open') {
+				report = await recheckOpen();
+				result[a.id] = 'done';
+			} else {
+				await executeAction(a.kind, {});
+				result[a.id] = 'triggered';
+			}
 		} catch {
 			result[a.id] = 'failed';
 		} finally {
 			busy[a.id] = false;
 		}
+	}
+
+	// Request outcomes, most telling first, with what each means.
+	const outcomeInfo: { key: RecheckOutcome; label: string; hint?: string; tone: string }[] = [
+		{ key: 'error', label: 'Could not check', tone: 'text-destructive' },
+		{
+			key: 'not_in_arr',
+			label: 'Not in Sonarr/Radarr',
+			hint: 'Seerr could not add the title — check the request in Seerr.',
+			tone: 'text-warning'
+		},
+		{ key: 'reconciled', label: 'Already on disk — now marked imported', tone: 'text-success' },
+		{ key: 'reset', label: 'Failed attempt — started again', tone: 'text-info' },
+		{
+			key: 'missing',
+			label: 'Out but missing — searched',
+			hint: 'If the search finds nothing, no release matches the quality profile yet (often: no German release).',
+			tone: 'text-foreground'
+		},
+		{ key: 'unmonitored', label: 'Not monitored in Sonarr/Radarr — not searched', tone: 'text-muted-foreground' },
+		{ key: 'downloading', label: 'Downloading', tone: 'text-muted-foreground' },
+		{ key: 'waiting', label: 'Not out yet', tone: 'text-muted-foreground' },
+		{ key: 'done', label: 'Imported — waiting for Jellyfin', tone: 'text-muted-foreground' }
+	];
+	const countWord: Record<RecheckOutcome, string> = {
+		error: 'error',
+		not_in_arr: 'unknown',
+		reconciled: 'on disk',
+		reset: 'reset',
+		missing: 'missing',
+		unmonitored: 'unmonitored',
+		downloading: 'downloading',
+		waiting: 'not out yet',
+		done: 'done'
+	};
+	const groups = $derived(
+		report
+			? outcomeInfo
+					.map((o) => ({ ...o, requests: report!.requests.filter((r) => r.outcome === o.key) }))
+					.filter((g) => g.requests.length > 0)
+			: []
+	);
+
+	// "15 missing · 2 not out yet" — only for series, a film is one item.
+	function itemCounts(r: RecheckRequest): string {
+		if (r.media_type !== 'tv') return '';
+		return outcomeInfo
+			.filter((o) => (r.counts[o.key] ?? 0) > 0)
+			.map((o) => `${r.counts[o.key]} ${countWord[o.key]}`)
+			.join(' · ');
 	}
 </script>
 
@@ -135,14 +190,59 @@
 	</div>
 {/snippet}
 
-{#if searchActions.length > 0}
+{#if recheckActions.length > 0}
 	<section class="mb-6">
-		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Search</h2>
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Open requests</h2>
 		<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-			{#each searchActions as a (a.id)}
-				{@render actionCard(a, 'Search for all missing, monitored items')}
+			{#each recheckActions as a (a.id)}
+				{@render actionCard(a, 'Match with Sonarr/Radarr, restart failed attempts, search what is out')}
 			{/each}
 		</div>
+		{#if report}
+			<div class="mt-3 rounded-lg border border-border bg-card p-4" aria-live="polite">
+				<p class="text-sm">
+					<span class="font-medium">{report.open} open {report.open === 1 ? 'request' : 'requests'} checked.</span>
+					{#if report.search_skipped && report.searched_at}
+						<span class="text-muted-foreground">
+							Searched {relativeTime(report.searched_at, clock.now)} already — not again within 15 minutes.
+						</span>
+					{:else if report.searched_at}
+						<span class="text-muted-foreground">Searches started.</span>
+					{:else}
+						<span class="text-muted-foreground">Nothing to search.</span>
+					{/if}
+				</p>
+				{#if report.errors?.length}
+					<ul class="mt-2 space-y-0.5 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+						{#each report.errors as e (e)}<li class="break-words">{e}</li>{/each}
+					</ul>
+				{/if}
+				{#each groups as g (g.key)}
+					<div class="mt-4">
+						<h3 class={cn('text-xs font-semibold', g.tone)}>
+							{g.key === 'missing' && report.search_skipped ? 'Out but missing — searched shortly before' : g.label}
+							<span class="font-normal text-muted-foreground">({g.requests.length})</span>
+						</h3>
+						{#if g.hint}<p class="mt-0.5 text-[11px] text-muted-foreground">{g.hint}</p>{/if}
+						<ul class="mt-1.5 divide-y divide-border/60">
+							{#each g.requests as r (r.id)}
+								<li>
+									<a
+										href="/requests/{r.id}"
+										class="tap flex items-baseline justify-between gap-3 py-1.5 text-sm hover:underline"
+									>
+										<span class="min-w-0 truncate">{r.title || `Request ${r.id}`}</span>
+										{#if itemCounts(r)}
+											<span class="shrink-0 text-[11px] text-muted-foreground tabular-nums">{itemCounts(r)}</span>
+										{/if}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
+			</div>
+		{/if}
 	</section>
 {/if}
 

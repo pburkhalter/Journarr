@@ -42,7 +42,7 @@ func TestAvailableGlobalDerivesFromCaps(t *testing.T) {
 
 func TestExecuteUnknownKindErrors(t *testing.T) {
 	a := &Actions{}
-	if err := a.Execute(context.Background(), "bogus", nil); err == nil {
+	if _, err := a.Execute(context.Background(), "bogus", nil); err == nil {
 		t.Fatal("expected error for unknown action kind")
 	}
 }
@@ -51,9 +51,6 @@ func TestParamCoercion(t *testing.T) {
 	// JSON numbers arrive as float64.
 	if got := pInt(map[string]any{"n": float64(42)}, "n"); got != 42 {
 		t.Errorf("pInt float64 = %d, want 42", got)
-	}
-	if got := pStr(map[string]any{"s": "x"}, "s"); got != "x" {
-		t.Errorf("pStr = %q, want x", got)
 	}
 	if got := pInt(map[string]any{}, "missing"); got != 0 {
 		t.Errorf("pInt missing = %d, want 0", got)

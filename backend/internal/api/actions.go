@@ -52,11 +52,16 @@ func (s *server) executeAction(w http.ResponseWriter, req *http.Request) {
 	}
 	ctx, done := s.detach(req)
 	defer done()
-	if err := s.Actions.Execute(ctx, body.Kind, body.Params); err != nil {
+	result, err := s.Actions.Execute(ctx, body.Kind, body.Params)
+	if err != nil {
 		httpError(w, s.Log, "execute action", err)
 		return
 	}
-	writeJSON(w, map[string]string{"status": "ok"})
+	out := map[string]any{"status": "ok"}
+	if result != nil {
+		out["result"] = result
+	}
+	writeJSON(w, out)
 }
 
 func (s *server) retry(w http.ResponseWriter, req *http.Request) {

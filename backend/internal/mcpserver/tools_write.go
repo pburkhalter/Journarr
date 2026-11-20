@@ -27,6 +27,13 @@ func (s *Server) registerWriteTools() {
 		Description: "Make Sonarr/Radarr search the indexers now for a movie, a whole series or one season."},
 		true, s.searchTitle)
 
+	addTool(s, &mcp.Tool{Name: "recheck_open_requests", Annotations: mutating("Re-check open requests", false, false),
+		Description: "Square every open request with Sonarr/Radarr: items whose file is already on disk move " +
+			"to imported, attempts whose every download failed start again, and every released or aired, " +
+			"monitored, missing movie/episode gets one search (not again within 15 minutes). Returns per " +
+			"request what it found: missing, waiting (not out yet), downloading, unmonitored, not_in_arr."},
+		true, s.recheckOpen)
+
 	addTool(s, &mcp.Tool{Name: "retry_item", Annotations: mutating("Retry a download", false, false),
 		Description: "Retry a stuck or failed movie/episode (media_item_id from get_request): cancels and " +
 			"blocklists its current download, then searches again."},
@@ -114,6 +121,10 @@ func (s *Server) searchTitle(ctx context.Context, in searchTitleIn) (any, error)
 		return nil, err
 	}
 	return map[string]any{"searching": true}, nil
+}
+
+func (s *Server) recheckOpen(ctx context.Context, _ noArgs) (any, error) {
+	return s.d.Actions.RecheckOpen(ctx)
 }
 
 type itemIn struct {

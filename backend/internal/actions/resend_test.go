@@ -61,10 +61,10 @@ func TestResendNotifyOfferedForUnannouncedItems(t *testing.T) {
 		t.Fatal("resend-notify not offered for an unannounced available item")
 	}
 
-	if err := a.Execute(ctx, "resend-notify", map[string]any{"request_id": float64(reqID)}); err != nil {
+	if _, err := a.Execute(ctx, "resend-notify", map[string]any{"request_id": float64(reqID)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Execute(ctx, "resend-notify", map[string]any{"request_id": float64(reqID)}); err != nil {
+	if _, err := a.Execute(ctx, "resend-notify", map[string]any{"request_id": float64(reqID)}); err != nil {
 		t.Fatal(err)
 	}
 	tasks, err := st.ClaimFlowTasks(ctx, 10)

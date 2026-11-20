@@ -14,7 +14,7 @@ import (
 type Descriptor struct {
 	ID         string `json:"id"`
 	Label      string `json:"label"`
-	Kind       string `json:"kind"`  // library-scan|cancel|retry|season-search
+	Kind       string `json:"kind"`  // recheck-open|library-scan|transcode-*|cancel|resend-notify|season-search
 	Scope      string `json:"scope"` // global|request|season|item
 	InstanceID string `json:"instance_id,omitempty"`
 	RequestID  int64  `json:"request_id,omitempty"`
@@ -31,7 +31,14 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 	}
 	switch scope {
 	case "global":
-		// (whole-library "search missing" removed — fetcharr owns that now)
+		// (whole-library "search missing" removed — fetcharr owns that now;
+		// the re-check searches only what open requests still miss)
+		if a.Sonarr != nil || a.Radarr != nil {
+			out = append(out, Descriptor{
+				ID: "recheck-open", Label: "Re-check open requests",
+				Kind: "recheck-open", Scope: "global",
+			})
+		}
 		for _, inst := range a.Reg.WithCapability(registry.CapLibraryScan) {
 			out = append(out, Descriptor{
 				ID: "library-scan:" + inst.ID, Label: inst.Label + " library scan",
@@ -96,27 +103,34 @@ func (a *Actions) Available(ctx context.Context, scope string, targetID int64) [
 	return out
 }
 
-// Execute dispatches an action by kind. Params carry the target ids.
-func (a *Actions) Execute(ctx context.Context, kind string, params map[string]any) error {
+// Execute dispatches an action by kind. Params carry the target ids. The
+// result is nil except for actions that report something (recheck-open).
+func (a *Actions) Execute(ctx context.Context, kind string, params map[string]any) (any, error) {
 	switch kind {
+	case "recheck-open":
+		rep, err := a.RecheckOpen(ctx)
+		if rep == nil {
+			return nil, err
+		}
+		return rep, err
 	case "library-scan":
-		return a.JellyfinScan(ctx)
+		return nil, a.JellyfinScan(ctx)
 	case "transcode-scan":
-		return a.TdarrRescan(ctx)
+		return nil, a.TdarrRescan(ctx)
 	case "transcode-pause":
-		return a.TdarrWorkers(ctx, 0)
+		return nil, a.TdarrWorkers(ctx, 0)
 	case "transcode-resume":
-		return a.TdarrWorkers(ctx, 1)
+		return nil, a.TdarrWorkers(ctx, 1)
 	case "cancel":
-		return a.Cancel(ctx, pInt(params, "request_id"))
+		return nil, a.Cancel(ctx, pInt(params, "request_id"))
 	case "retry":
-		return a.Retry(ctx, pInt(params, "media_item_id"))
+		return nil, a.Retry(ctx, pInt(params, "media_item_id"))
 	case "season-search":
-		return a.SeasonSearch(ctx, pInt(params, "request_id"), pInt(params, "season"))
+		return nil, a.SeasonSearch(ctx, pInt(params, "request_id"), pInt(params, "season"))
 	case "resend-notify":
-		return a.ResendNotify(ctx, pInt(params, "request_id"))
+		return nil, a.ResendNotify(ctx, pInt(params, "request_id"))
 	default:
-		return fmt.Errorf("unknown action %q", kind)
+		return nil, fmt.Errorf("unknown action %q", kind)
 	}
 }
 
@@ -144,14 +158,7 @@ func (a *Actions) SeasonSearch(ctx context.Context, requestID, season int64) err
 	return a.finish(ctx, id, err)
 }
 
-// pStr / pInt coerce JSON params (numbers arrive as float64).
-func pStr(m map[string]any, k string) string {
-	if v, ok := m[k].(string); ok {
-		return v
-	}
-	return ""
-}
-
+// pInt coerces a JSON param (numbers arrive as float64).
 func pInt(m map[string]any, k string) int64 {
 	switch v := m[k].(type) {
 	case float64:

@@ -240,6 +240,26 @@ func (s *Store) RollupForRequest(ctx context.Context, id int64) (*RequestRollup,
 	return &RequestRollup{Request: *r, StageCounts: counts, ItemCount: total, LastError: lastErr, StuckCount: stuck, AwaitingReleaseAt: awaiting}, nil
 }
 
+// OpenRequests returns the requests still being worked (active or partial),
+// oldest first.
+func (s *Store) OpenRequests(ctx context.Context) ([]Request, error) {
+	rows, err := s.db.QueryContext(ctx, reqSelect+`
+		WHERE status IN ('active','partial') ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Request{}
+	for rows.Next() {
+		r, err := scanRequestRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *r)
+	}
+	return out, rows.Err()
+}
+
 // ActiveTVRequestsWithoutItems finds approved Seerr tv requests whose fan-out
 // never produced items (Sonarr down, restart during retry) — the projector
 // sweep re-drives them.

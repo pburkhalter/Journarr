@@ -6,6 +6,7 @@ import type {
 	Instance,
 	Me,
 	RawEvent,
+	RecheckReport,
 	RemovalPlan,
 	RemovalStep,
 	RequestDetail,
@@ -160,8 +161,15 @@ export async function getActions(scope = 'global', targetId?: number): Promise<A
 	return body.actions ?? [];
 }
 
-export const executeAction = (kind: string, params: Record<string, unknown>) =>
-	post('/api/actions/execute', { kind, params });
+/** Runs a catalog action; resolves to its result (only some actions report one). */
+export async function executeAction(kind: string, params: Record<string, unknown>): Promise<unknown> {
+	const res = await request('/api/actions/execute', 'POST', { kind, params });
+	if (!res.ok) throw new ApiError('/api/actions/execute', res.status);
+	const body = (await res.json().catch(() => ({}))) as { result?: unknown };
+	return body.result;
+}
+
+export const recheckOpen = async () => (await executeAction('recheck-open', {})) as RecheckReport;
 
 export async function getFlowSettings(): Promise<Record<string, string>> {
 	const body = await get<{ settings: Record<string, string> }>('/api/flow');

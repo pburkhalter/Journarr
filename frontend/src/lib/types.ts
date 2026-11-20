@@ -76,12 +76,48 @@ export interface Stage {
 export interface Action {
 	id: string;
 	label: string;
-	kind: string; // search-missing|library-scan|cancel|retry|season-search
+	kind: string; // recheck-open|library-scan|transcode-*|cancel|resend-notify|season-search
 	scope: string; // global|request|season|item
 	instance_id?: string;
 	request_id?: number;
 	season?: number;
 	danger?: boolean;
+}
+
+/** What one item turned out to be in a re-check of the open requests. */
+export type RecheckOutcome =
+	| 'error'
+	| 'not_in_arr'
+	| 'reconciled'
+	| 'reset'
+	| 'missing'
+	| 'unmonitored'
+	| 'downloading'
+	| 'waiting'
+	| 'done';
+
+export interface RecheckRequest {
+	id: number;
+	title: string;
+	media_type: 'movie' | 'tv';
+	outcome: RecheckOutcome;
+	counts: Partial<Record<RecheckOutcome, number>>;
+}
+
+/** Result of "Re-check open requests"; the counts are items. */
+export interface RecheckReport {
+	open: number;
+	missing: number;
+	reset: number;
+	reconciled: number;
+	waiting: number;
+	downloading: number;
+	unmonitored: number;
+	not_in_arr: number;
+	search_skipped?: boolean;
+	searched_at?: string;
+	errors?: string[];
+	requests: RecheckRequest[];
 }
 
 export interface Stats {

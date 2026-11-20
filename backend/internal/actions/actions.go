@@ -1,12 +1,14 @@
-// Package actions performs the v1 interventions the UI exposes: retry a
-// failed/stuck download, cancel a request end-to-end, trigger a Jellyfin
-// library scan. Each records an audit row and publishes an action.result.
+// Package actions performs the interventions the UI and the MCP server
+// expose: retry a failed/stuck download, cancel a request end-to-end, re-check
+// the open requests, trigger a Jellyfin library scan, edit or remove a title.
+// Each records an audit row and publishes an action.result.
 package actions
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/pburkhalter/journarr/internal/clients"
@@ -24,6 +26,10 @@ type Actions struct {
 	Reg     *registry.Registry // capability enumeration for the Actions tab
 	Wake    func()
 	Publish func(event string, data any)
+	Now     func() time.Time // nil means time.Now (tests inject a clock)
+
+	recheckMu         sync.Mutex
+	lastRecheckSearch time.Time // see RecheckSearchCooldown
 }
 
 func isTerminal(state string) bool {
